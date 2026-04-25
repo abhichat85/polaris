@@ -157,6 +157,61 @@ export const deletePath = mutation({
   },
 })
 
+/**
+ * Bulk write — used by the scaffolder to land 30+ files in one mutation.
+ * Authority: sub-plan 03 §10. Existing rows for the same paths are overwritten.
+ */
+export const writeMany = mutation({
+  args: {
+    projectId: v.id("projects"),
+    files: v.array(
+      v.object({
+        path: v.string(),
+        content: v.string(),
+      }),
+    ),
+    updatedBy: v.union(
+      v.literal("user"),
+      v.literal("agent"),
+      v.literal("scaffold"),
+      v.literal("import"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const db = getDb(ctx)
+    const now = Date.now()
+    let created = 0
+    let updated = 0
+    for (const f of args.files) {
+      const existing = await findByPath(ctx, args.projectId, f.path)
+      const path = normalize(f.path)
+      const segments = path.split("/")
+      const name = segments[segments.length - 1] ?? path
+      if (existing && existing.type === "file") {
+        await db.patch(existing._id, {
+          content: f.content,
+          path,
+          updatedAt: now,
+          updatedBy: args.updatedBy,
+        })
+        updated++
+      } else if (!existing) {
+        await db.insert("files", {
+          projectId: args.projectId,
+          name,
+          type: "file",
+          content: f.content,
+          path,
+          updatedAt: now,
+          updatedBy: args.updatedBy,
+        })
+        created++
+      }
+    }
+    return { created, updated, total: args.files.length }
+  },
+})
+
 export const listPath = query({
   args: { projectId: v.id("projects"), directory: v.string() },
   handler: async (ctx, args) => {
