@@ -1,261 +1,211 @@
-# Polaris - Build a Cursor AI Alternative
+# Polaris — AI-Powered Cloud IDE
 
-This is the repository for a comprehensive [YouTube tutorial series](https://youtu.be/Xf9rHPNBMyQ) where we build a **fully-featured cloud IDE** from scratch.
+**Polaris** is an AI-native cloud IDE where you describe what you want to build and a running, full-stack app appears in under 90 seconds. It is an independent, production product by [Praxiom](https://praxiomai.xyz), shipping at **[build.praxiomai.xyz](https://build.praxiomai.xyz)**.
 
-[![Watch the Tutorial](https://img.shields.io/badge/YouTube-Watch%20Tutorial-red?style=for-the-badge&logo=youtube)](https://youtu.be/Xf9rHPNBMyQ)
+---
 
-> **Note:** This is **Part 1 of 2** of the tutorial series. The codebase is functional but incomplete - Part 2 will add the AI Agent, WebContainer preview, and GitHub integration.
+## The End State
 
-## What We're Building
+> Describe an app. See it running. Iterate in plain English. Ship to the web in one click.
 
-Polaris is a browser-based IDE inspired by Cursor AI, featuring:
+Polaris sits in the same space as Cursor, Bolt, and Lovable — but is built for the workflow where **the AI agent is the primary author** and the human is the director. The full v1 product:
 
-- Real-time collaborative code editing
-- AI-powered code suggestions and quick edit (Cmd+K)
-- Conversation-based AI assistant
-- In-browser code execution with WebContainer
-- GitHub import/export integration
-- Multi-file project management
+1. **Prompt → Live App in <90s.** Type a description, Claude scaffolds a full-stack Next.js + Supabase project, boots it inside a sandboxed environment (E2B), and hands you a live preview URL — all without leaving the browser.
+
+2. **AI Agent that actually edits files.** The agent runs in a real loop: it reads your codebase, writes changes file-by-file, runs terminal commands, and shows you every tool call as it happens. No mock responses. Streaming progress. Cancel mid-run and pick up from a checkpoint.
+
+3. **Code editor that keeps you in control.** Full CodeMirror 6 editor with inline AI (ghost-text suggestions, Cmd+K quick edit), syntax highlighting for every major language, and a file explorer — so you can always read and edit the raw code.
+
+4. **Manual spec panel.** A lightweight requirement tracker inside every project: list features, write acceptance criteria, mark status. The AI references it; you own it.
+
+5. **GitHub integration.** Import any existing repo, iterate on it with the AI, and push clean commits back. Pre-push secret scanning blocks accidental credential leaks.
+
+6. **One-click deploy.** Connect Vercel + Supabase once. After that, a single button provisions a Supabase database, injects env vars, and deploys to a live URL.
+
+7. **Billing that makes sense.** Free tier to try it, Pro at $29/month for serious use, Team at $99/month. Hard quota enforcement — no surprise bills, no runaway sandbox costs.
+
+8. **Production-grade infrastructure.** Rate limiting, error tracking (Sentry), structured logging with PII redaction, retry policies on every external API, sandbox cost ceilings, a real status page.
+
+---
+
+## What Makes It Different
+
+| Axis | Bolt / Lovable | Cursor | Polaris |
+|---|---|---|---|
+| **Primary output** | Runnable apps | Edited local code | Runnable apps |
+| **Agent transparency** | Hidden | Partial | Full tool-call stream |
+| **Editor access** | Limited | Full | Full (CodeMirror 6) |
+| **GitHub round-trip** | Export only | Local git | Import + push |
+| **Deploy target** | Netlify/Vercel | Self-managed | Vercel + Supabase (auto) |
+| **Spec / requirements** | None | None | Built-in spec panel |
+| **Generated stack** | Varies | Any | Next.js 15 + Supabase |
+
+---
 
 ## Tech Stack
 
-| Category      | Technologies                                                |
-| ------------- | ----------------------------------------------------------- |
-| **Frontend**  | Next.js 16, React 19, TypeScript, Tailwind CSS 4            |
-| **Editor**    | CodeMirror 6, Custom Extensions, One Dark Theme             |
-| **Backend**   | Convex (Real-time DB), Inngest (Background Jobs)            |
-| **AI**        | Claude Sonnet 4 (preferred) or Gemini 2.0 Flash (free tier) |
-| **Auth**      | Clerk (with GitHub OAuth)                                   |
-| **Execution** | WebContainer API, xterm.js                                  |
-| **UI**        | shadcn/ui, Radix UI                                         |
+| Layer | Technology |
+|---|---|
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
+| **Editor** | CodeMirror 6 with custom extensions |
+| **Backend / DB** | Convex (real-time, source of truth) |
+| **Background jobs** | Inngest |
+| **AI** | Claude Sonnet 4.6 via Anthropic SDK (raw, no Vercel AI SDK) |
+| **Sandbox** | E2B (via `SandboxProvider` abstraction — swappable) |
+| **Auth** | Clerk (with GitHub OAuth) |
+| **Generated apps** | Next.js 15 + Supabase Auth + Supabase Postgres |
+| **Deploy pipeline** | Vercel REST API + Supabase Management API |
+| **Billing** | Stripe |
+| **Rate limiting** | Upstash Redis |
+| **Observability** | Sentry, structured logging |
+| **UI** | shadcn/ui, Radix UI |
 
-## Part 1 Contents (Chapters 1-12)
+---
 
-### Phase 1: Foundation & Sponsor Technologies
+## Current Status
 
-- **Chapter 1:** Project Setup, UI Library & Theme
-- **Chapter 2:** Clerk Authentication & Protected Routes
-- **Chapter 3:** Convex Database & Real-time Setup
-- **Chapter 4:** Inngest - Background Jobs & Non-Blocking UI
-- **Chapter 5:** Firecrawl - Teaching AI with Live Documentation
-- **Chapter 6:** Sentry - Error Tracking & LLM Monitoring
-- **Chapter 7:** Projects Dashboard & Landing Page
+The codebase covers the full foundation: authentication, real-time database, file system, code editor with inline AI (ghost text + Cmd+K), conversation system, file explorer, and background job infrastructure.
 
-### Phase 2: File System & Editor
+**In active development (17-day sprint to v1):**
 
-- **Chapter 8:** Project IDE Layout & Resizable Panes
-- **Chapter 9:** File Explorer - Full Implementation
-- **Chapter 10:** Code Editor & State Management
+| Phase | Days | Focus | Status |
+|---|---|---|---|
+| **Phase 1** | 1–4 | Agent loop, E2B sandbox, scaffolding, streaming UI, spec panel | In progress |
+| **Phase 2** | 5–9 | GitHub integration, Vercel + Supabase deploy, Stripe billing | Upcoming |
+| **Phase 3** | 10–13 | Hardening: rate limiting, Sentry, Playwright, CI | Upcoming |
+| **Phase 4** | 14–17 | Onboarding, marketing site, legal pages, soft launch | Upcoming |
 
-### Phase 3: AI Features (Partial)
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full 17-day plan and [`CONSTITUTION.md`](CONSTITUTION.md) for architectural decisions.
 
-- **Chapter 11:** AI Suggestions & Quick Edit
-- **Chapter 12:** Conversation System
+---
 
-## Part 2 Contents (Chapters 13-16) - Coming Soon
-
-- **Chapter 13:** AI Agent & Tools (AgentKit, file management tools)
-- **Chapter 14:** WebContainer, Terminal & Preview
-- **Chapter 15:** GitHub Import & Export
-- **Chapter 16:** AI Project Creation & Final Polish
-
-## Getting Started
+## Getting Started (Development)
 
 ### Prerequisites
 
 - Node.js 20.09+
 - npm or pnpm
-- Accounts needed:
-  - [Clerk](https://cwa.run/clerk) - Authentication
-  - [Convex](https://cwa.run/convex) - Database
-  - [Inngest](https://cwa.run/inngest) - Background jobs
-  - [Anthropic](https://anthropic.com) or [Google AI Studio](https://aistudio.google.com) - AI API (one required)
-  - [Firecrawl](https://cwa.run/firecrawl) - Web scraping (optional)
-  - [Sentry](https://cwa.run/sentry) - Error tracking (optional)
+- Accounts: Clerk, Convex, Inngest, Anthropic, E2B
 
 ### Installation
 
-1. Clone the repository:
+```bash
+git clone https://github.com/code-with-antonio/polaris.git
+cd polaris
+npm install
+cp .env.example .env.local
+```
 
-   ```bash
-   git clone https://github.com/code-with-antonio/polaris.git
-   cd polaris
-   ```
+Configure `.env.local`:
 
-2. Install dependencies:
+```env
+# Auth
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
 
-   ```bash
-   npm install
-   ```
+# Database
+NEXT_PUBLIC_CONVEX_URL=
+CONVEX_DEPLOYMENT=
+POLARIS_CONVEX_INTERNAL_KEY=   # Random string
 
-3. Set up environment variables:
+# AI
+ANTHROPIC_API_KEY=
 
-   ```bash
-   cp .env.example .env.local
-   ```
+# Sandbox (Phase 1)
+E2B_API_KEY=
 
-4. Configure your `.env.local` with the required keys:
+# Background jobs
+INNGEST_EVENT_KEY=
+INNGEST_SIGNING_KEY=
 
-   ```env
-   # Clerk
-   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-   CLERK_SECRET_KEY=
+# Error tracking (optional)
+SENTRY_DSN=
+```
 
-   # Convex
-   NEXT_PUBLIC_CONVEX_URL=
-   CONVEX_DEPLOYMENT=
-   POLARIS_CONVEX_INTERNAL_KEY=  # Generate a random string
+### Running locally
 
-   # AI Provider (choose one)
-   ANTHROPIC_API_KEY=        # Preferred - Claude Sonnet 4
-   GOOGLE_GENERATIVE_AI_API_KEY=  # Free alternative - Gemini 2.0 Flash
+```bash
+# Terminal 1 — Convex
+npx convex dev
 
-   # Firecrawl (optional)
-   FIRECRAWL_API_KEY=
+# Terminal 2 — Next.js
+npm run dev
 
-   # Sentry (optional)
-   SENTRY_DSN=
-   ```
+# Terminal 3 — Inngest
+npx inngest-cli@latest dev
+```
 
-5. Start the Convex development server:
+Open [http://localhost:3000](http://localhost:3000).
 
-   ```bash
-   npx convex dev
-   ```
+### Scripts
 
-6. In a new terminal, start the Next.js development server:
+```bash
+npm run dev      # Development server
+npm run build    # Production build
+npm run lint     # ESLint
+npm run test     # Vitest unit tests (Phase 3+)
+```
 
-   ```bash
-   npm run dev
-   ```
-
-7. In another terminal, start the Inngest dev server:
-
-   ```bash
-   npx inngest-cli@latest dev
-   ```
-
-8. Open [http://localhost:3000](http://localhost:3000)
+---
 
 ## Project Structure
 
 ```
 src/
-├── app/                    # Next.js App Router
-│   ├── api/               # API routes
-│   │   ├── messages/      # Conversation API
-│   │   ├── suggestion/    # AI suggestions
-│   │   └── quick-edit/    # Cmd+K editing
-│   └── projects/          # Project pages
-├── components/            # Shared components
-│   ├── ui/               # shadcn/ui components
-│   └── ai-elements/      # AI conversation components
+├── app/
+│   ├── api/
+│   │   ├── agent/          # Main agent loop (Phase 1)
+│   │   ├── scaffold/       # App generation (Phase 1)
+│   │   ├── suggestion/     # Inline ghost-text AI
+│   │   └── quick-edit/     # Cmd+K editor AI
+│   └── projects/           # IDE pages
 ├── features/
-│   ├── auth/             # Authentication
-│   ├── conversations/    # AI chat system
-│   ├── editor/           # CodeMirror setup
-│   │   └── extensions/   # Custom extensions
-│   ├── preview/          # WebContainer (Part 2)
-│   └── projects/         # Project management
-├── inngest/              # Inngest client
-└── lib/                  # Utilities
+│   ├── agent/              # ModelAdapter, AgentRunner, ToolExecutor
+│   ├── sandbox/            # SandboxProvider, E2BProvider
+│   ├── editor/             # CodeMirror + extensions
+│   ├── conversations/      # Chat system
+│   ├── specs/              # Spec panel (Phase 1)
+│   ├── github/             # GitHub integration (Phase 2)
+│   └── projects/           # Project management
+├── inngest/                # Background job functions
+└── lib/                    # Utilities, crypto
 
 convex/
-├── schema.ts             # Database schema
-├── projects.ts           # Project queries/mutations
-├── files.ts              # File operations
-├── conversations.ts      # Conversation operations
-└── system.ts             # Internal API for Inngest
+├── schema.ts               # Database schema
+├── projects.ts
+├── files.ts
+├── conversations.ts
+├── specs.ts
+└── system.ts
+
+docs/
+├── ROADMAP.md              # 17-day sprint plan
+├── CONSTITUTION.md         # Architecture decisions + constraints
+└── plans/                  # Per-subsystem implementation plans
 ```
 
-## Features Implemented (Part 1)
+---
 
-### Editor
+## Architecture Principles
 
-- Syntax highlighting for JS, TS, CSS, HTML, JSON, Markdown, Python
-- Line numbers and code folding
-- Minimap overview
-- Bracket matching and indentation guides
-- Multi-cursor editing
+A few decisions that are locked in (see [`CONSTITUTION.md`](CONSTITUTION.md) for rationale):
 
-### AI Features
+- **Convex is source of truth.** E2B sandboxes are a write-through cache. On any drift, Convex wins.
+- **No Vercel AI SDK.** All AI calls go through a custom `ModelAdapter` / `ClaudeAdapter` using raw Anthropic SDK. This keeps streaming predictable and avoids the abstraction tax.
+- **Six tools, no more.** The agent uses exactly: `read_file`, `write_file`, `create_file`, `delete_file`, `list_files`, `run_command`. Adding tools requires a constitutional amendment.
+- **All four error recovery layers from Day 1.** API retry → tool feedback → checkpoint + resume → hard limits (50 iterations / 150K tokens / 5 minutes).
+- **Generated apps are Next.js 15 + Supabase.** No variation. This makes scaffolding testable and deploys deterministic.
 
-- Real-time code suggestions with ghost text
-- Quick edit with Cmd+K (select code + natural language instruction)
-- Selection tooltip for quick actions
-- Conversation sidebar with message history
+---
 
-### File Management
+## Contributing
 
-- File explorer with folder hierarchy
-- Create, rename, delete files and folders
-- VSCode-style file icons
-- Tab-based file navigation
-- Auto-save with debouncing
+This is a private sprint toward a soft launch with 50 beta users. External contributions are not open yet.
 
-### Real-time
+If you find a security issue, email `security@praxiomai.xyz`.
 
-- Convex-powered instant updates
-- Optimistic UI updates
-- Background job processing with Inngest
+---
 
-## Current Limitations (Part 1)
+## License
 
-These features are planned for Part 2:
-
-- AI agent cannot yet modify files (mock response only)
-- No message cancellation
-- No past conversations dialog
-- No code preview/execution
-- No GitHub integration
-- No AI project generation
-
-## Scripts
-
-```bash
-npm run dev       # Start development server
-npm run build     # Build for production
-npm run start     # Start production server
-npm run lint      # Run ESLint
-```
-
-## Tutorial Links
-
-- **YouTube Playlist:** [Coming Soon]
-- **Part 1:** Chapters 1-12
-- **Part 2:** Chapters 13-16
-
-## Sponsors
-
-A huge thank you to the sponsors who made this tutorial possible. Consider checking them out - they offer generous free tiers perfect for learning!
-
-### Authentication
-
-**[Clerk](https://cwa.run/clerk)** - Add authentication to your app in minutes, not days.
-
-### Database
-
-**[Convex](https://cwa.run/convex)** - The real-time database that makes building collaborative apps a breeze.
-
-### Background Jobs
-
-**[Inngest](https://cwa.run/inngest)** - Reliable background jobs and event-driven workflows.
-
-### Web Scraping
-
-**[Firecrawl](https://cwa.run/firecrawl)** - Turn any website into LLM-ready data.
-
-### Error Tracking
-
-**[Sentry](https://cwa.run/sentry)** - See what's broken and fix it fast.
-
-### Code Review
-
-**[CodeRabbit](https://cwa.run/coderabbit)** - AI-powered code reviews that catch bugs before your users do.
-
-## Acknowledgments
-
-- [Cursor](https://cursor.sh) - Inspiration for the project
-- [Orchids](https://orchids.app) - Inspiration for the project
-- [shadcn/ui](https://ui.shadcn.com) - UI components
-- [CodeMirror](https://codemirror.net) - Code editor
+Proprietary. All rights reserved. © 2026 Praxiom.
