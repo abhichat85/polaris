@@ -1,0 +1,267 @@
+/**
+ * AgentRunner — orchestrates the agent loop.
+ * Authority: CONSTITUTION Article VII (loop), Article XII (4-layer error recovery),
+ * sub-plan 01 Tasks 14–18.
+ *
+ * The runner is built against three abstractions so it has zero direct dependency
+ * on Convex, Anthropic, or E2B:
+ *   - ModelAdapter (yields AgentStep)
+ *   - ToolExecutor (returns ToolOutput)
+ *   - AgentSink    (persists side effects)
+ *
+ * Error recovery layers (CONSTITUTION §12):
+ *   1. API retry             — handled inside the adapter
+ *   2. Tool failure feedback — runner forwards ok:false results to the model as
+ *                              tool_result blocks with isError=true
+ *   3. Checkpoint + resume   — saved after every iteration; resumed when
+ *                              `resumeFromCheckpoint` is true (Inngest retry)
+ *   4. Hard limits           — 50 iterations / 150K tokens / 5 min wall clock
+ */
+
+import { AGENT_TOOLS } from "@/lib/tools/definitions"
+import { ToolExecutor } from "@/lib/tools/executor"
+import type { ToolOutput } from "@/lib/tools/types"
+import { AGENT_SYSTEM_PROMPT } from "./system-prompt"
+import type {
+  AgentCheckpoint,
+  AgentDoneStatus,
+  AgentSink,
+  ConversationMessage,
+} from "./sink"
+import type {
+  AgentStep,
+  ContentBlock,
+  Message,
+  ModelAdapter,
+  ToolCall,
+} from "./types"
+
+export const MAX_ITERATIONS = 50
+export const MAX_TOKENS = 150_000
+export const MAX_DURATION_MS = 5 * 60_000
+
+const DEFAULT_MAX_OUTPUT_TOKENS = 8_000
+const DEFAULT_TURN_TIMEOUT_MS = 60_000
+
+export interface AgentRunnerDeps {
+  adapter: ModelAdapter
+  executor: ToolExecutor
+  sink: AgentSink
+  /** Sandbox to run tool calls against. May be null in dev/no-sandbox mode. */
+  sandboxId: string | null
+  /** Test seam — defaults to Date.now(). */
+  now?: () => number
+}
+
+export interface AgentRunInput {
+  messageId: string
+  conversationId: string
+  projectId: string
+  userId: string
+  resumeFromCheckpoint: boolean
+}
+
+interface RunState {
+  messages: Message[]
+  iterationCount: number
+  totalInputTokens: number
+  totalOutputTokens: number
+}
+
+export class AgentRunner {
+  constructor(private readonly deps: AgentRunnerDeps) {}
+
+  async run(input: AgentRunInput): Promise<void> {
+    const startedAt = (this.deps.now ?? Date.now)()
+    const state = await this.initState(input)
+
+    while (true) {
+      // ── Layer 4: hard limits ───────────────────────────────────────────────
+      if (state.iterationCount >= MAX_ITERATIONS) {
+        return this.markDone(input, state, "error", "Agent reached iteration limit (50). Latest changes are saved.")
+      }
+      if (state.totalInputTokens + state.totalOutputTokens >= MAX_TOKENS) {
+        return this.markDone(input, state, "error", "Context limit reached (150K tokens). Start a new conversation to continue.")
+      }
+      if ((this.deps.now ?? Date.now)() - startedAt >= MAX_DURATION_MS) {
+        return this.markDone(input, state, "error", "Agent timed out at 5 minutes. Latest changes are saved.")
+      }
+
+      // Cancellation check — stop cleanly between iterations.
+      if (await this.deps.sink.isCancelled(input.messageId)) {
+        return this.markDone(input, state, "cancelled")
+      }
+
+      const turn = await this.runTurn(input, state)
+
+      // Adapter-level error → mark errored and stop.
+      if (turn.errored) {
+        return this.markDone(input, state, "error", turn.errorMessage)
+      }
+
+      // No tool calls — natural end of conversation.
+      if (turn.toolCalls.length === 0) {
+        return this.markDone(input, state, "completed")
+      }
+
+      // ── Layer 2: feed tool results back to the model ───────────────────────
+      const resultBlocks = await this.executeTools(input, state, turn.toolCalls)
+
+      // Append the assistant turn (with tool_use blocks) and the tool results
+      // to the message history for the next iteration.
+      state.messages.push({
+        role: "assistant",
+        content: turn.toolCalls.map<ContentBlock>((tc) => ({
+          type: "tool_use",
+          id: tc.id,
+          name: tc.name,
+          input: tc.input,
+        })),
+      })
+      state.messages.push({ role: "tool", content: resultBlocks })
+
+      state.iterationCount++
+
+      // ── Layer 3: checkpoint after each iteration ─────────────────────────
+      const checkpoint: AgentCheckpoint = {
+        messageId: input.messageId,
+        projectId: input.projectId,
+        messages: state.messages,
+        iterationCount: state.iterationCount,
+        totalInputTokens: state.totalInputTokens,
+        totalOutputTokens: state.totalOutputTokens,
+        lastToolCallName: turn.toolCalls.at(-1)?.name,
+        savedAt: (this.deps.now ?? Date.now)(),
+      }
+      await this.deps.sink.saveCheckpoint(checkpoint)
+    }
+  }
+
+  // ── Setup ────────────────────────────────────────────────────────────────────
+
+  private async initState(input: AgentRunInput): Promise<RunState> {
+    if (input.resumeFromCheckpoint) {
+      const cp = await this.deps.sink.loadCheckpoint(input.messageId)
+      if (cp) {
+        return {
+          messages: cp.messages.map((m) => ({ ...m })),
+          iterationCount: cp.iterationCount,
+          totalInputTokens: cp.totalInputTokens,
+          totalOutputTokens: cp.totalOutputTokens,
+        }
+      }
+    }
+    const initial = await this.deps.sink.loadInitialMessages(input.conversationId)
+    return {
+      messages: initial.map(messageFromConversation),
+      iterationCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+    }
+  }
+
+  // ── Single turn — drives the adapter generator until it yields done ─────────
+
+  private async runTurn(
+    input: AgentRunInput,
+    state: RunState,
+  ): Promise<{
+    toolCalls: ToolCall[]
+    errored: boolean
+    errorMessage?: string
+  }> {
+    const toolCalls: ToolCall[] = []
+    let errored = false
+    let errorMessage: string | undefined
+
+    const stream = this.deps.adapter.runWithTools(state.messages, AGENT_TOOLS, {
+      systemPrompt: AGENT_SYSTEM_PROMPT,
+      maxTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+      timeoutMs: DEFAULT_TURN_TIMEOUT_MS,
+    })
+
+    for await (const step of stream) {
+      switch (step.type) {
+        case "text_delta":
+          await this.deps.sink.appendText(input.messageId, step.delta)
+          break
+
+        case "tool_call":
+          toolCalls.push(step.toolCall)
+          await this.deps.sink.appendToolCall(input.messageId, step.toolCall)
+          break
+
+        case "usage":
+          state.totalInputTokens += step.inputTokens
+          state.totalOutputTokens += step.outputTokens
+          await this.deps.sink.recordUsage(input.userId, step.inputTokens, step.outputTokens)
+          break
+
+        case "done":
+          if (step.stopReason === "error") {
+            errored = true
+            errorMessage = step.error ?? "Model returned an error."
+          }
+          break
+      }
+    }
+
+    return { toolCalls, errored, errorMessage }
+  }
+
+  // ── Tool execution loop (Layer 2 lives here) ────────────────────────────────
+
+  private async executeTools(
+    input: AgentRunInput,
+    _state: RunState,
+    toolCalls: ToolCall[],
+  ): Promise<ContentBlock[]> {
+    const sandboxId = this.deps.sandboxId
+    const ctx = { projectId: input.projectId, sandboxId, userId: input.userId }
+    const blocks: ContentBlock[] = []
+    for (const tc of toolCalls) {
+      const result = await this.deps.executor.execute(tc, ctx)
+      await this.deps.sink.appendToolResult(input.messageId, tc.id, result)
+      blocks.push({
+        type: "tool_result",
+        toolUseId: tc.id,
+        content: serializeToolResult(result),
+        isError: !result.ok,
+      })
+    }
+    return blocks
+  }
+
+  // ── Termination helpers ─────────────────────────────────────────────────────
+
+  private async markDone(
+    input: AgentRunInput,
+    state: RunState,
+    status: AgentDoneStatus,
+    errorMessage?: string,
+  ): Promise<void> {
+    await this.deps.sink.markDone(input.messageId, {
+      status,
+      errorMessage,
+      inputTokens: state.totalInputTokens,
+      outputTokens: state.totalOutputTokens,
+    })
+  }
+}
+
+function messageFromConversation(m: ConversationMessage): Message {
+  return { role: m.role, content: m.content }
+}
+
+function serializeToolResult(result: ToolOutput): string {
+  // The model receives a JSON string. Successful results include the data; failures
+  // include the error message + errorCode so the model can recover (Layer 2).
+  if (result.ok) {
+    return JSON.stringify({ ok: true, data: result.data })
+  }
+  return JSON.stringify({
+    ok: false,
+    error: result.error,
+    errorCode: result.errorCode,
+  })
+}
