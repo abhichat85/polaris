@@ -33,7 +33,7 @@ export const getFile = query({
 
     const file = await ctx.db.get("files", args.id);
 
-     if (!file) {
+    if (!file) {
       throw new Error("File not found");
     }
 
@@ -47,7 +47,10 @@ export const getFile = query({
       throw new Error("Unauthorized to access this project");
     }
 
-    return file;
+    return {
+      ...file,
+      url: file.storageId ? await ctx.storage.getUrl(file.storageId) : null,
+    };
   },
 });
 
@@ -84,7 +87,7 @@ export const getFilePath = query({
     let currentId: Id<"files"> | undefined = args.id;
 
     while (currentId) {
-      const file = (await ctx.db.get("files", currentId)) as 
+      const file = (await ctx.db.get("files", currentId)) as
         | Doc<"files">
         | undefined;
       if (!file) break;
@@ -98,7 +101,7 @@ export const getFilePath = query({
 });
 
 export const getFolderContents = query({
-  args: { 
+  args: {
     projectId: v.id("projects"),
     parentId: v.optional(v.id("files")),
   },
@@ -137,7 +140,7 @@ export const getFolderContents = query({
 });
 
 export const createFile = mutation({
-  args: { 
+  args: {
     projectId: v.id("projects"),
     parentId: v.optional(v.id("files")),
     name: v.string(),
@@ -190,7 +193,7 @@ export const createFile = mutation({
 });
 
 export const createFolder = mutation({
-  args: { 
+  args: {
     projectId: v.id("projects"),
     parentId: v.optional(v.id("files")),
     name: v.string(),
@@ -329,8 +332,8 @@ export const deleteFile = mutation({
       }
 
       // If it's a folder, delete all children first
-       if (item.type === "folder") {
-         const children = await ctx.db
+      if (item.type === "folder") {
+        const children = await ctx.db
           .query("files")
           .withIndex("by_project_parent", (q) =>
             q
@@ -339,13 +342,13 @@ export const deleteFile = mutation({
           )
           .collect();
 
-          for (const child of children) {
-            await deleteRecursive(child._id);
-          }
-       }
+        for (const child of children) {
+          await deleteRecursive(child._id);
+        }
+      }
 
-       // Delete storage file if it exists
-       if (item.storageId) {
+      // Delete storage file if it exists
+      if (item.storageId) {
         await ctx.storage.delete(item.storageId);
       }
 
@@ -393,5 +396,57 @@ export const updateFile = mutation({
     await ctx.db.patch("projects", file.projectId, {
       updatedAt: now,
     });
+  },
+});
+
+export const getFileByPath = query({
+  args: {
+    projectId: v.id("projects"),
+    path: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx);
+
+    const project = await ctx.db.get("projects", args.projectId);
+
+    if (!project) throw new Error("Project not found");
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized");
+    }
+
+    // Split path into parts and remove empty strings from leading slash
+    const parts = args.path.split("/").filter(p => p);
+    let currentParentId: Id<"files"> | undefined = undefined;
+    let foundFile: Doc<"files"> | null = null;
+
+    for (const part of parts) {
+      // Find file/folder with this name and parent
+      const matches = await ctx.db
+        .query("files")
+        .withIndex("by_project_parent", (q) =>
+          q
+            .eq("projectId", args.projectId)
+            .eq("parentId", currentParentId)
+        )
+        .collect();
+
+      const match = matches.find(f => f.name === part);
+
+      if (!match) {
+        return null;
+      }
+
+      foundFile = match;
+      currentParentId = match._id;
+    }
+
+    return foundFile
+      ? {
+        ...foundFile,
+        url: foundFile.storageId
+          ? await ctx.storage.getUrl(foundFile.storageId)
+          : null,
+      }
+      : null;
   },
 });

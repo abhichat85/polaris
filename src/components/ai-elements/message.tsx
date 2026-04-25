@@ -446,3 +446,182 @@ export const MessageToolbar = ({
     {children}
   </div>
 );
+
+// ============================================================================
+// Tool Call Visualization Components
+// ============================================================================
+
+export type ToolCallStatus = "running" | "completed" | "error";
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+  status: ToolCallStatus;
+}
+
+export interface FileChange {
+  fileId: string;
+  operation: "created" | "updated" | "deleted";
+  fileName?: string;
+}
+
+export type MessageToolCallsProps = HTMLAttributes<HTMLDivElement> & {
+  toolCalls: ToolCall[];
+};
+
+const toolNameIcons: Record<string, string> = {
+  read_file: "📖",
+  write_file: "✏️",
+  create_file: "📄",
+  create_folder: "📁",
+  delete_file: "🗑️",
+  list_directory: "📂",
+  search_files: "🔍",
+};
+
+const toolNameLabels: Record<string, string> = {
+  read_file: "Reading file",
+  write_file: "Writing file",
+  create_file: "Creating file",
+  create_folder: "Creating folder",
+  delete_file: "Deleting file",
+  list_directory: "Listing directory",
+  search_files: "Searching files",
+};
+
+export const MessageToolCalls = ({
+  toolCalls,
+  className,
+  ...props
+}: MessageToolCallsProps) => {
+  if (!toolCalls || toolCalls.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-1.5 rounded-lg bg-muted/50 p-2 text-xs",
+        className
+      )}
+      {...props}
+    >
+      {toolCalls.map((tool) => (
+        <div
+          key={tool.id}
+          className={cn(
+            "flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors",
+            tool.status === "running" && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+            tool.status === "completed" && "bg-green-500/10 text-green-600 dark:text-green-400",
+            tool.status === "error" && "bg-red-500/10 text-red-600 dark:text-red-400"
+          )}
+        >
+          <span className="shrink-0">
+            {toolNameIcons[tool.name] || "🔧"}
+          </span>
+          <span className="font-medium">
+            {toolNameLabels[tool.name] || tool.name}
+          </span>
+          {typeof tool.args?.path === 'string' && (
+            <span className="truncate text-muted-foreground font-mono text-[10px]">
+              {tool.args.path}
+            </span>
+          )}
+          {tool.status === "running" && (
+            <span className="ml-auto shrink-0 animate-pulse">●</span>
+          )}
+          {tool.status === "completed" && (
+            <span className="ml-auto shrink-0">✓</span>
+          )}
+          {tool.status === "error" && (
+            <span className="ml-auto shrink-0">✗</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export type MessageFileChangesProps = HTMLAttributes<HTMLDivElement> & {
+  fileChanges: FileChange[];
+};
+
+const operationStyles: Record<FileChange["operation"], string> = {
+  created: "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30",
+  updated: "bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/30",
+  deleted: "bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/30",
+};
+
+const operationLabels: Record<FileChange["operation"], string> = {
+  created: "Created",
+  updated: "Modified",
+  deleted: "Deleted",
+};
+
+export const MessageFileChanges = ({
+  fileChanges,
+  className,
+  ...props
+}: MessageFileChangesProps) => {
+  if (!fileChanges || fileChanges.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn("flex flex-wrap gap-1.5 mt-2", className)}
+      {...props}
+    >
+      {fileChanges.map((change, index) => (
+        <span
+          key={`${change.fileId}-${index}`}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+            operationStyles[change.operation]
+          )}
+        >
+          <span>{operationLabels[change.operation]}</span>
+          {change.fileName && (
+            <span className="font-mono truncate max-w-[100px]">
+              {change.fileName}
+            </span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+};
+
+export type MessageProcessingProps = HTMLAttributes<HTMLDivElement> & {
+  streamingContent?: string;
+  toolCalls?: ToolCall[];
+};
+
+export const MessageProcessing = ({
+  streamingContent,
+  toolCalls,
+  className,
+  ...props
+}: MessageProcessingProps) => {
+  const hasToolCalls = toolCalls && toolCalls.length > 0;
+  const hasContent = streamingContent && streamingContent.trim().length > 0;
+
+  return (
+    <div className={cn("flex flex-col gap-2", className)} {...props}>
+      {/* Show tool calls if any */}
+      {hasToolCalls && <MessageToolCalls toolCalls={toolCalls} />}
+
+      {/* Show streaming content if any */}
+      {hasContent ? (
+        <MessageResponse>{streamingContent}</MessageResponse>
+      ) : !hasToolCalls ? (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <span className="size-2 rounded-full bg-blue-500 animate-pulse" />
+          <span>Thinking...</span>
+        </div>
+      ) : null}
+    </div>
+  );
+};

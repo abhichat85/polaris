@@ -1,7 +1,7 @@
 "use client";
 
 import { Poppins } from "next/font/google";
-import { SparkleIcon } from "lucide-react";
+import { SparkleIcon, Wand2, Plus, Github } from "lucide-react";
 import { FaGithub } from "react-icons/fa";
 import {
   adjectives,
@@ -16,8 +16,10 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 
 import { ProjectsList } from "./projects-list";
-import { useCreateProject } from "../hooks/use-projects";
+import { useCreateProject, useProjects } from "../hooks/use-projects";
 import { ProjectsCommandDialog } from "./projects-command-dialog";
+import { ProjectGeneratorDialog } from "./project-generator-dialog";
+import { ImportDialog } from "./import-dialog";
 
 const font = Poppins({
   subsets: ["latin"],
@@ -28,6 +30,8 @@ export const ProjectsView = () => {
   const createProject = useCreateProject();
 
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -35,6 +39,12 @@ export const ProjectsView = () => {
         if (e.key === "k") {
           e.preventDefault();
           setCommandDialogOpen(true);
+        } else if (e.key === "g") {
+          e.preventDefault();
+          setGeneratorOpen(true);
+        } else if (e.key === "i") {
+          e.preventDefault();
+          setImportOpen(true);
         }
       }
     }
@@ -49,6 +59,15 @@ export const ProjectsView = () => {
         open={commandDialogOpen}
         onOpenChange={setCommandDialogOpen}
       />
+      <ProjectGeneratorDialog
+        open={generatorOpen}
+        onOpenChange={setGeneratorOpen}
+      />
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+      />
+
       <div className="min-h-screen bg-sidebar flex flex-col items-center justify-center p-6 md:p-16">
         <div className="w-full max-w-sm mx-auto flex flex-col gap-4 items-center">
 
@@ -67,7 +86,7 @@ export const ProjectsView = () => {
           </div>
 
           <div className="flex flex-col gap-4 w-full">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -101,11 +120,28 @@ export const ProjectsView = () => {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {}}
+                onClick={() => setGeneratorOpen(true)}
                 className="h-full items-start justify-start p-4 bg-background border flex flex-col gap-6 rounded-none"
               >
                 <div className="flex items-center justify-between w-full">
-                  <FaGithub className="size-4" />
+                  <Wand2 className="size-4" />
+                  <Kbd className="bg-accent border">
+                    ⌘G
+                  </Kbd>
+                </div>
+                <div>
+                  <span className="text-sm">
+                    Generate
+                  </span>
+                </div>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setImportOpen(true)}
+                className="h-full items-start justify-start p-4 bg-background border flex flex-col gap-6 rounded-none"
+              >
+                <div className="flex items-center justify-between w-full">
+                  <Github className="size-4" />
                   <Kbd className="bg-accent border">
                     ⌘I
                   </Kbd>

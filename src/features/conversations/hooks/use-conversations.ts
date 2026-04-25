@@ -18,7 +18,15 @@ export const useConversations = (projectId: Id<"projects">) => {
   return useQuery(api.conversations.getByProject, { projectId });
 };
 
+
 export const useCreateConversation = () => {
-  return useMutation(api.conversations.create)
-  // TODO: Add optimistic mutation
+  return useMutation(api.conversations.create);
+};
+
+export const useDeleteConversation = () => {
+  return useMutation(api.conversations.deleteConversation);
+};
+
+export const useUpdateConversationTitle = () => {
+  return useMutation(api.conversations.updateTitle);
 };

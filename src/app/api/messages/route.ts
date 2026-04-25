@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     content: message,
   });
 
-    // Create assistant message placeholder with processing status
+  // Create assistant message placeholder with processing status
   const assistantMessageId = await convex.mutation(
     api.system.createMessage,
     {
@@ -71,11 +71,13 @@ export async function POST(request: Request) {
     }
   );
 
-  // TODO: Invoke inngest to process the message
+  // Invoke inngest to process the message with agent
   const event = await inngest.send({
     name: "message/sent",
     data: {
       messageId: assistantMessageId,
+      conversationId: conversationId as Id<"conversations">,
+      projectId,
     },
   });
 

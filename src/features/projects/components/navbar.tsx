@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
-import { CloudCheckIcon, LoaderIcon } from "lucide-react";
+import { CloudCheckIcon, Github, LoaderIcon } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { Poppins } from "next/font/google";
 import { formatDistanceToNow } from "date-fns";
@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 import { Id } from "../../../../convex/_generated/dataModel";
 import { useProject, useRenameProject } from "../hooks/use-projects";
+import { GitHubDialog } from "./github-dialog";
 
 const font = Poppins({
   subsets: ["latin"],
@@ -38,10 +39,11 @@ export const Navbar = ({
   projectId: Id<"projects">;
 }) => {
   const project = useProject(projectId);
-  const renameProject = useRenameProject(projectId);
+  const renameProject = useRenameProject();
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [name, setName] = useState("");
+  const [isGitHubOpen, setIsGitHubOpen] = useState(false);
 
   const handleStartRename = () => {
     if (!project) return;
@@ -139,7 +141,7 @@ export const Navbar = ({
             </TooltipTrigger>
             <TooltipContent>
               Saved{" "}
-              {project?.updatedAt 
+              {project?.updatedAt
                 ? formatDistanceToNow(
                   project.updatedAt,
                   { addSuffix: true, }
@@ -150,8 +152,23 @@ export const Navbar = ({
         )}
       </div>
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground hidden sm:flex"
+          onClick={() => setIsGitHubOpen(true)}
+        >
+          <Github className="size-4 mr-2" />
+          Export
+        </Button>
         <UserButton />
       </div>
+
+      <GitHubDialog
+        projectId={projectId}
+        open={isGitHubOpen}
+        onOpenChange={setIsGitHubOpen}
+      />
     </nav>
   )
 };

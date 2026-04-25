@@ -93,3 +93,38 @@ export const rename = mutation({
     });
   },
 });
+
+export const updateExportStatus = mutation({
+  args: {
+    id: v.id("projects"),
+    status: v.union(
+      v.literal("exporting"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("cancelled")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx);
+    const project = await ctx.db.get("projects", args.id);
+    if (!project) throw new Error("Project not found");
+    // Internal mutations (called by Inngest via admin key) might not have identity?
+    // But verifyAuth requires it.
+    // If called from Inngest, we usually simulate a user or skip auth if using internal mutation.
+    // For now, let's assume Inngest calls this with a user token context or we make it internal.
+    // If we make it internal, we don't export it here, or we use `internalMutation`.
+
+    // For simplicity, let's assume the user calls "start export" (status=exporting).
+    // The background job needs to set status=completed.
+    // Background job runs without user session usually.
+    // So we need an `internalMutation` for the background job.
+
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized");
+    }
+
+    await ctx.db.patch("projects", args.id, {
+      exportStatus: args.status,
+    });
+  },
+});

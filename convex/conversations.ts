@@ -115,3 +115,70 @@ export const getMessages = query({
       .collect();
   },
 });
+export const deleteConversation = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx);
+
+    const conversation = await ctx.db.get(args.conversationId);
+
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    const project = await ctx.db.get(conversation.projectId);
+
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized to access this project");
+    }
+
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId)
+      )
+      .collect();
+
+    for (const message of messages) {
+      await ctx.db.delete(message._id);
+    }
+
+    await ctx.db.delete(args.conversationId);
+  },
+});
+
+export const updateTitle = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx);
+
+    const conversation = await ctx.db.get(args.conversationId);
+
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    const project = await ctx.db.get(conversation.projectId);
+
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized to access this project");
+    }
+
+    await ctx.db.patch(args.conversationId, {
+      title: args.title,
+    });
+  },
+});

@@ -55,6 +55,29 @@ export default defineSchema({
         v.literal("cancelled")
       )
     ),
+    // Streaming support for real-time updates
+    streamingContent: v.optional(v.string()),
+    // Tool calls made during message generation
+    toolCalls: v.optional(v.array(v.object({
+      id: v.string(),
+      name: v.string(),
+      args: v.any(),
+      result: v.optional(v.any()),
+      status: v.union(
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("error")
+      ),
+    }))),
+    // Files modified during this message
+    fileChanges: v.optional(v.array(v.object({
+      fileId: v.id("files"),
+      operation: v.union(
+        v.literal("created"),
+        v.literal("updated"),
+        v.literal("deleted")
+      ),
+    }))),
   })
     .index("by_conversation", ["conversationId"])
     .index("by_project_status", ["projectId", "status"]),
