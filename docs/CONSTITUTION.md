@@ -19,7 +19,7 @@
 - [Article V — The Stack (Locked)](#article-v--the-stack-locked)
 - [Article VI — Abstraction Interfaces](#article-vi--abstraction-interfaces)
 - [Article VII — The Agent Loop](#article-vii--the-agent-loop)
-- [Article VIII — The Six Agent Tools](#article-viii--the-six-agent-tools)
+- [Article VIII — The Seven Agent Tools](#article-viii--the-seven-agent-tools)
 - [Article IX — File Safety Policy](#article-ix--file-safety-policy)
 - [Article X — Consistency Model](#article-x--consistency-model)
 - [Article XI — Data Model](#article-xi--data-model)
@@ -740,9 +740,11 @@ These are constitutional prohibitions:
 
 ---
 
-## Article VIII — The Six Agent Tools
+## Article VIII — The Seven Agent Tools
 
-The agent has exactly six tools in v1.0. Each is a deliberate, scoped capability.
+The agent has exactly seven tools in v1.0. Each is a deliberate, scoped capability.
+
+> **Amended 2026-04-26 (D-017):** Originally six tools. `edit_file` was added as the precision instrument for targeted changes to existing files; `write_file` remains the full-overwrite primitive. See D-017 in Article XX.
 
 ### §8.1 Tool Definitions
 
@@ -761,7 +763,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: "write_file",
-    description: "Overwrite an existing file with new content. Fails if the file does not exist.",
+    description: "Overwrite an existing file with new content. Fails if the file does not exist. Prefer edit_file for targeted changes to existing files; reserve write_file for small files (<100 lines) or full rewrites.",
     inputSchema: {
       type: "object",
       properties: {
@@ -769,6 +771,19 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         content: { type: "string" },
       },
       required: ["path", "content"],
+    },
+  },
+  {
+    name: "edit_file",
+    description: "Apply a targeted edit to an existing file by replacing an exact substring. The search string must appear exactly once in the file. Use this for surgical changes; use write_file only for new files or full rewrites.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        search: { type: "string", description: "Exact substring to find — must be unique within the file. Include enough surrounding context to disambiguate." },
+        replace: { type: "string", description: "Replacement string (may be empty to delete)." },
+      },
+      required: ["path", "search", "replace"],
     },
   },
   {
@@ -830,9 +845,12 @@ type ErrorCode =
   | "PATH_NOT_FOUND"
   | "PATH_ALREADY_EXISTS"
   | "PATH_NOT_WRITABLE"
+  | "EDIT_NOT_FOUND"      // edit_file: search string does not appear in the file
+  | "EDIT_NOT_UNIQUE"     // edit_file: search string appears more than once (ambiguous)
   | "SANDBOX_DEAD"
   | "COMMAND_TIMEOUT"
   | "COMMAND_NONZERO_EXIT"
+  | "COMMAND_FORBIDDEN"
   | "INTERNAL_ERROR"
 ```
 
@@ -846,8 +864,8 @@ For every tool call:
 
 ```typescript
 async function executeTool(toolCall: ToolCall, ctx: ExecContext): Promise<ToolOutput> {
-  // 1. Permission check (write/create/delete only)
-  if (["write_file", "create_file", "delete_file"].includes(toolCall.name)) {
+  // 1. Permission check (every mutation: write/edit/create/delete)
+  if (["write_file", "edit_file", "create_file", "delete_file"].includes(toolCall.name)) {
     const path = toolCall.input.path as string
     if (!FilePermissionPolicy.canWrite(path)) {
       return { ok: false, error: `Path is locked or read-only: ${path}`, errorCode: "PATH_LOCKED" }
@@ -858,6 +876,7 @@ async function executeTool(toolCall: ToolCall, ctx: ExecContext): Promise<ToolOu
   switch (toolCall.name) {
     case "read_file":   return await readFile(toolCall.input, ctx)
     case "write_file":  return await writeFile(toolCall.input, ctx)
+    case "edit_file":   return await editFile(toolCall.input, ctx)
     case "create_file": return await createFile(toolCall.input, ctx)
     case "delete_file": return await deleteFile(toolCall.input, ctx)
     case "list_files":  return await listFiles(toolCall.input, ctx)
@@ -880,6 +899,18 @@ async function executeTool(toolCall: ToolCall, ctx: ExecContext): Promise<ToolOu
 - If Convex write fails: throw (system error, fails loud).
 - If E2B write fails: return `{ ok: false, errorCode: "SANDBOX_DEAD" }`. Convex is still correct. Sandbox will reconcile on restart.
 - Errors: `PATH_LOCKED`, `PATH_NOT_FOUND`, `SANDBOX_DEAD`.
+- **Use when:** creating-equivalent (file rewrite) or the file is short enough that a full overwrite is cheaper than reasoning about a diff. Default to `edit_file` for changes to existing files.
+
+#### `edit_file`
+
+- **Purpose:** surgical edit to an existing file by exact substring replacement. Reduces token cost on large files and prevents the "rewrite drift" failure mode where the model accidentally mangles surrounding code while regenerating an unchanged region.
+- Source: read current content from **Convex** (source of truth).
+- Match policy: `search` must occur **exactly once** in the file.
+  - Zero occurrences → `EDIT_NOT_FOUND` (model should `read_file` again or refine the search string).
+  - Two or more occurrences → `EDIT_NOT_UNIQUE` (model must add surrounding context to the search string until it disambiguates).
+- Order: **Convex first, then E2B** (Article X). Same write semantics as `write_file` from there.
+- Errors: `PATH_LOCKED`, `PATH_NOT_FOUND`, `EDIT_NOT_FOUND`, `EDIT_NOT_UNIQUE`, `SANDBOX_DEAD`.
+- **Idempotence:** an edit is *not* idempotent (replaying it after success will fail with `EDIT_NOT_FOUND` because the search string is no longer present). The agent loop must not blindly retry a successful edit.
 
 #### `create_file`
 
@@ -906,7 +937,7 @@ async function executeTool(toolCall: ToolCall, ctx: ExecContext): Promise<ToolOu
 - Errors: `COMMAND_TIMEOUT`, `COMMAND_NONZERO_EXIT` (returned as `ok: true` with non-zero exit; the model interprets), `SANDBOX_DEAD`.
 - **Forbidden commands:** `rm -rf /`, `sudo`, anything matching `npm run dev` (already running). Enforced by deny-list.
 
-### §8.5 Why Six Tools (Not More)
+### §8.5 Why Seven Tools (Not More)
 
 We deliberately limit the surface area:
 
@@ -915,8 +946,9 @@ We deliberately limit the surface area:
 - **No `database` tool.** Generated apps interact with their Supabase via code, not via agent.
 - **No `secret` tool.** Secrets are managed by the deploy pipeline, not by the agent.
 - **No `npm install` as a separate tool.** It's a `run_command`. The model decides when to run it.
+- **`write_file` and `edit_file` are not redundant.** `write_file` is the full-file primitive (creation-equivalent, full rewrite). `edit_file` is the targeted-change primitive (cheap, low-drift, surgical). They are different tools because they have different failure modes — collapsing them into one would force the model to pay write-the-whole-file token cost on every change.
 
-If a sub-plan proposes a 7th tool, it requires Constitutional amendment.
+If a sub-plan proposes an 8th tool, it requires Constitutional amendment.
 
 ---
 
@@ -2305,13 +2337,15 @@ Every architectural decision, its alternatives, and why we chose what we chose. 
 
 **Rationale:** Reinforces Praxiom ecosystem; allows Polaris to be standalone today and tightly integrated tomorrow.
 
-### D-012: Six Tools, No More (locked 2026-04-26)
+### D-012: Six Tools, No More (locked 2026-04-26 · superseded by D-017 on 2026-04-26)
 
 **Question:** What tools does the agent have?
 
 **Decision:** read_file, write_file, create_file, delete_file, list_files, run_command. No web_search, no git, no database, no secret tools.
 
 **Rationale:** Smaller tool surface = clearer agent reasoning, easier debugging, smaller security surface. Adding tools requires Constitutional amendment (forces deliberate review).
+
+**Status:** Amended by D-017 — `edit_file` added as a 7th tool. The minimal-surface principle stands; the surface is now seven tools, not six.
 
 ### D-013: Loop Hard Limits = 50 iterations / 150K tokens / 5 min (locked 2026-04-26)
 
@@ -2340,6 +2374,26 @@ Every architectural decision, its alternatives, and why we chose what we chose. 
 **Rationale:** Convex fully supports `v.array(v.object(...))` for nested complex types. JSON serialization was an incorrect assumption. Typed validators provide: (a) compile-time safety in Convex queries, (b) correct TypeScript inference in generated types, (c) potential for future index-on-field queries. There is no downside. JSON serialization would require manual parse/stringify at every call site and lose type safety.
 
 **Reconsideration trigger:** Never — `v.string()` for structured arrays is an antipattern in Convex. If a specific field exceeds Convex document size limits, move to a dedicated sub-document table.
+
+### D-017: Add `edit_file` as the 7th Tool — §8 Amendment (locked 2026-04-26)
+
+**Question:** Should the agent have a targeted-edit tool, or only `write_file` (full overwrite)?
+
+**Alternatives:**
+1. Keep `write_file` only — minimal surface, but every edit pays full-file token cost and risks "rewrite drift" where the model mangles unchanged regions during regeneration.
+2. Replace `write_file` with `edit_file` — collapses the two primitives, but loses the cheap full-rewrite path used during scaffolding and forces awkward "search for empty string" semantics for new content.
+3. **Add `edit_file` alongside `write_file`** — two distinct primitives, each with clear failure modes.
+
+**Decision:** Option 3. The agent gains a 7th tool: `edit_file({ path, search, replace })` with exact-substring matching, requiring `search` to occur exactly once.
+
+**Rationale:**
+- **Token cost** — A 500-line file with a 3-line change costs ~10× more under `write_file` than `edit_file`. Across a multi-file refactor this compounds dramatically.
+- **Reliability** — Long full-file regenerations are where the model drifts: code that wasn't supposed to change gets quietly mangled. `edit_file` makes the unchanged region structurally untouchable.
+- **Industry consensus** — Aider's "architect mode," Claude Code's edit primitive, and Cursor's apply-diff all converge on this pattern. We are not innovating here; we are adopting a proven shape.
+- **Failure modes are clean** — `EDIT_NOT_FOUND` and `EDIT_NOT_UNIQUE` are model-recoverable: the agent can `read_file` again and refine the search string. Surfacing them as tool errors (Article XII Layer 2) keeps the loop predictable.
+- **Stays within minimal-surface philosophy** — We are not adding a `git` tool, a `web_search` tool, or a `database` tool. We are adding the precision instrument missing from the file-mutation primitives.
+
+**Reconsideration trigger:** If empirical data shows the model picks `edit_file` so reliably that `write_file` is never used outside `create_file`-equivalent paths, consider deprecating `write_file` and reintroducing creation semantics into `edit_file`. Likewise, if `edit_file` proves insufficient (e.g., model wants regex or multi-occurrence replacement), revisit before adding a fourth file-mutation primitive.
 
 ---
 
@@ -2378,4 +2432,4 @@ It is not a finished document. It will change. Amend it deliberately. Never viol
 
 *Build Polaris correctly the first time, so we don't have to build it twice.*
 
-— Authors, 2026-04-26
+— Authors, 2026-04-26 (last amended 2026-04-26: D-017 added `edit_file`)

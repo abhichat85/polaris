@@ -203,7 +203,7 @@ import { TOOL_ICON, TOOL_LABEL, getToolPresentation } from "@/features/conversat
 
 describe("tool-icons", () => {
   it("returns concrete icon component for each known tool", () => {
-    for (const tool of ["read_file", "write_file", "create_file", "delete_file", "list_files", "run_command"] as const) {
+    for (const tool of ["read_file", "write_file", "edit_file", "create_file", "delete_file", "list_files", "run_command"] as const) {
       expect(TOOL_ICON[tool]).toBeTypeOf("object") // forwardRef component
     }
   })

@@ -192,7 +192,7 @@ A few decisions that are locked in (see [`CONSTITUTION.md`](CONSTITUTION.md) for
 
 - **Convex is source of truth.** E2B sandboxes are a write-through cache. On any drift, Convex wins.
 - **No Vercel AI SDK.** All AI calls go through a custom `ModelAdapter` / `ClaudeAdapter` using raw Anthropic SDK. This keeps streaming predictable and avoids the abstraction tax.
-- **Six tools, no more.** The agent uses exactly: `read_file`, `write_file`, `create_file`, `delete_file`, `list_files`, `run_command`. Adding tools requires a constitutional amendment.
+- **Seven tools, no more.** The agent uses exactly: `read_file`, `write_file`, `edit_file`, `create_file`, `delete_file`, `list_files`, `run_command`. `edit_file` is the surgical-edit primitive (exact-substring replace, must be unique); `write_file` is reserved for full rewrites. Adding tools requires a constitutional amendment.
 - **All four error recovery layers from Day 1.** API retry → tool feedback → checkpoint + resume → hard limits (50 iterations / 150K tokens / 5 minutes).
 - **Generated apps are Next.js 15 + Supabase.** No variation. This makes scaffolding testable and deploys deterministic.
 

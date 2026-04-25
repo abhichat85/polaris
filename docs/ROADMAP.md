@@ -74,7 +74,8 @@ All locked in `CONSTITUTION.md` Article XX (Decision Log). Quick reference:
 | D-009 | Generated Apps = Next.js 15 + Supabase | 2026-04-25 |
 | D-010 | Branding = "Polaris by Praxiom" | 2026-04-25 |
 | D-011 | Domain = build.praxiomai.xyz | 2026-04-25 |
-| D-012 | Six Tools, no more | 2026-04-26 |
+| D-012 | Six Tools, no more *(superseded by D-017)* | 2026-04-26 |
+| D-017 | Add `edit_file` as 7th tool | 2026-04-26 |
 | D-013 | Loop Hard Limits = 50 iter / 150K tokens / 5 min | 2026-04-26 |
 | D-014 | Free Tier = 50K tokens / 30 min E2B / 1 deploy | 2026-04-26 |
 | D-015 | 17-Day Timeline | 2026-04-26 |
@@ -421,7 +422,7 @@ These are deferred — not blockers. Revisit per the schedule.
 
 **Placeholder scan:** No "TBD" or "implement later" patterns in this roadmap. Sub-plans will have TDD-grade detail.
 
-**Type consistency:** Tool names referenced consistently (`read_file`, `write_file`, `create_file`, `delete_file`, `list_files`, `run_command`). File paths consistent. Convex table names consistent. Cross-references to CONSTITUTION articles verified.
+**Type consistency:** Tool names referenced consistently (`read_file`, `write_file`, `edit_file`, `create_file`, `delete_file`, `list_files`, `run_command`). File paths consistent. Convex table names consistent. Cross-references to CONSTITUTION articles verified.
 
 **Scope check:** This roadmap covers one cohesive product (Polaris IDE). Sub-systems are decomposed; no sub-system is itself multi-product.
 
