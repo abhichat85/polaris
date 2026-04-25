@@ -4,7 +4,8 @@ import { NonRetriableError } from "inngest";
 import { convex } from "@/lib/convex-client";
 import { api } from "../../../../convex/_generated/api";
 import { runCodeAgent } from "@/lib/agents";
-import { AgentContext, ConversationMessage, ToolCallEvent } from "@/lib/agents/types";
+// Legacy types — being replaced by ModelAdapter (sub-plan 01 / Article XIX migration).
+import { AgentContext, ConversationMessage, ToolCallEvent } from "@/lib/agents/legacy-types";
 
 interface MessageEvent {
   messageId: Id<"messages">;

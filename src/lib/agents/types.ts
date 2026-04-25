@@ -1,90 +1,88 @@
 /**
- * Core types for JonaAI agent system
- * Used by Claude Agent SDK and Inngest orchestration
+ * ModelAdapter abstraction. Authority: CONSTITUTION.md Article VI §6.1, §6.3.
+ *
+ * Every model (Claude, GPT, Gemini) implements `ModelAdapter`. The agent loop
+ * works against this interface only — it never imports `@anthropic-ai/sdk`,
+ * `openai`, or `@google/generative-ai` directly. This keeps the loop testable
+ * with a stub adapter and makes future model swaps cheap.
  */
 
-import { Id } from "../../../convex/_generated/dataModel";
+export type MessageRole = "system" | "user" | "assistant" | "tool"
 
-/**
- * Context passed to agent during execution
- */
-export interface AgentContext {
-  projectId: Id<"projects">;
-  conversationId: Id<"conversations">;
-  messageId: Id<"messages">;
-  userId: string;
+export interface TextBlock {
+  type: "text"
+  text: string
 }
 
-/**
- * Represents a file operation performed by the agent
- */
-export interface FileOperation {
-  type: "create" | "update" | "delete" | "read";
-  path: string;
-  fileId?: Id<"files">;
-  content?: string;
+export interface ToolUseBlock {
+  type: "tool_use"
+  id: string
+  name: string
+  input: Record<string, unknown>
 }
 
-/**
- * Response from agent execution
- */
-export interface AgentResponse {
-  content: string;
-  fileOperations: FileOperation[];
-  thinking?: string;
-  error?: string;
+export interface ToolResultBlock {
+  type: "tool_result"
+  toolUseId: string
+  content: string
+  isError?: boolean
 }
 
-/**
- * Tool call event for real-time UI updates
- */
-export interface ToolCallEvent {
-  id: string;
-  name: string;
-  args: Record<string, unknown>;
-  status: "running" | "completed" | "error";
-  result?: unknown;
-  error?: string;
-  timestamp: number;
+export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+
+export interface Message {
+  role: MessageRole
+  content: string | ContentBlock[]
 }
 
-/**
- * File tree node for project context
- */
-export interface FileTreeNode {
-  id: Id<"files">;
-  name: string;
-  type: "file" | "folder";
-  path: string;
-  children?: FileTreeNode[];
+export interface ToolDefinition {
+  name: string
+  description: string
+  inputSchema: {
+    type: "object"
+    properties: Record<string, unknown>
+    required?: string[]
+  }
 }
 
-/**
- * Project context provided to agent
- */
-export interface ProjectContext {
-  projectId: Id<"projects">;
-  projectName: string;
-  fileTree: FileTreeNode[];
-  relevantFiles: Array<{
-    path: string;
-    content: string;
-  }>;
+export interface ToolCall {
+  id: string
+  name: string
+  input: Record<string, unknown>
 }
 
-/**
- * Message in conversation history
- */
-export interface ConversationMessage {
-  role: "user" | "assistant";
-  content: string;
+export interface RunOptions {
+  systemPrompt: string
+  maxTokens: number
+  timeoutMs: number
+  temperature?: number
+  /** Optional AbortSignal for cancellation. */
+  signal?: AbortSignal
 }
 
-/**
- * Streaming update event
- */
-export interface StreamingEvent {
-  type: "text" | "tool_start" | "tool_end" | "error";
-  content?: string;
-  toolCall?: ToolCallEvent;
+export const AGENT_STEP_TYPES = ["text_delta", "tool_call", "usage", "done"] as const
+export type AgentStepType = (typeof AGENT_STEP_TYPES)[number]
+
+export const STOP_REASONS = [
+  "end_turn",
+  "max_tokens",
+  "tool_use",
+  "stop_sequence",
+  "error",
+] as const
+export type StopReason = (typeof STOP_REASONS)[number]
+
+export type AgentStep =
+  | { type: "text_delta"; delta: string }
+  | { type: "tool_call"; toolCall: ToolCall }
+  | { type: "usage"; inputTokens: number; outputTokens: number }
+  | { type: "done"; stopReason: StopReason; error?: string }
+
+export interface ModelAdapter {
+  readonly name: string
+  runWithTools(
+    messages: Message[],
+    tools: ToolDefinition[],
+    opts: RunOptions,
+  ): AsyncGenerator<AgentStep, void, void>
 }
