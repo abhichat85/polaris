@@ -7,6 +7,37 @@
 
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
+import { verifyAuth } from "./auth"
+
+/**
+ * Authenticated read of the *current* user's billing record. Wraps
+ * `getByUser` with the auth identity so Settings UI never threads
+ * `userId` through props.
+ */
+export const getCurrent = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await verifyAuth(ctx)
+    const row = await ctx.db
+      .query("customers")
+      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .unique()
+    if (row) return row
+    return {
+      _id: null,
+      _creationTime: 0,
+      userId: identity.subject,
+      stripeCustomerId: undefined,
+      stripeSubscriptionId: undefined,
+      plan: "free" as const,
+      subscriptionStatus: "none" as const,
+      currentPeriodEnd: 0,
+      seatsAllowed: 1,
+      cancelAtPeriodEnd: false,
+      updatedAt: 0,
+    }
+  },
+})
 
 const planLiteral = v.union(
   v.literal("free"),

@@ -11,6 +11,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import {
   FileTextIcon,
@@ -89,7 +90,9 @@ export const IdeRail = ({
   onToggleAgent,
   onOpenSpec,
   onOpenExport,
-}: IdeRailProps) => (
+}: IdeRailProps) => {
+  const router = useRouter();
+  return (
   <aside className="w-12 shrink-0 bg-surface-1 flex flex-col items-stretch py-2 gap-0.5">
     {/* Brand — links back to /dashboard */}
     <Link
@@ -134,7 +137,11 @@ export const IdeRail = ({
     {/* Spacer */}
     <div className="flex-1" />
 
-    <RailButton icon={SettingsIcon} label="Settings (coming soon)" />
+    <RailButton
+      icon={SettingsIcon}
+      label="Settings"
+      onClick={() => router.push("/settings")}
+    />
 
     <div className="h-10 flex items-center justify-center">
       <UserButton
@@ -144,4 +151,5 @@ export const IdeRail = ({
       />
     </div>
   </aside>
-);
+  );
+};

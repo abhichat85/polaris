@@ -19,7 +19,9 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { UserButton } from "@clerk/nextjs";
 import {
   ArrowUp,
   FileText,
@@ -28,6 +30,7 @@ import {
   Paperclip,
   Plus,
   Search,
+  Settings,
   X,
 } from "lucide-react";
 import {
@@ -213,7 +216,21 @@ export const ProjectsView = () => {
         onChange={handleSpecUpload}
       />
 
-      <div className="min-h-screen bg-surface-0 flex flex-col items-center justify-center p-6 md:p-12">
+      <div className="min-h-screen bg-surface-0 flex flex-col items-center justify-center p-6 md:p-12 relative">
+        {/* Quiet top-right utility cluster: settings + identity */}
+        <div className="absolute top-4 right-4 flex items-center gap-1.5">
+          <Link
+            href="/settings"
+            className="inline-flex items-center justify-center size-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors"
+            aria-label="Settings"
+          >
+            <Settings className="size-4" />
+          </Link>
+          <UserButton
+            appearance={{ elements: { avatarBox: "size-7" } }}
+          />
+        </div>
+
         <div className="w-full max-w-2xl mx-auto flex flex-col gap-8">
           {/* Wordmark */}
           <div className="flex items-center gap-2.5 self-center">
