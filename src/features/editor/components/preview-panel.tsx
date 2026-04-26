@@ -52,14 +52,17 @@ export const PreviewPanel = ({
     };
 
     return (
-        <div className={cn("flex flex-col h-full bg-background border-l", className)}>
-            <div className="h-10 flex items-center gap-2 px-2 border-b bg-muted/30">
-                <div className="flex-1 flex items-center gap-1 bg-background border rounded-md px-2 h-7">
-                    <span className="text-muted-foreground text-xs">/</span>
+        // Praxiom §2.3 — surface depth replaces border. Preview panel sits on
+        // surface-1 so it's lighter than the surface-0 main background.
+        <div className={cn("flex flex-col h-full bg-surface-1", className)}>
+            {/* Toolbar — surface-2 (one step lighter than panel) */}
+            <div className="h-10 flex items-center gap-2 px-2 bg-surface-2 shrink-0">
+                <div className="flex-1 flex items-center gap-1 bg-input rounded-md px-2 h-7">
+                    <span className="text-muted-foreground/70 text-xs font-mono">/</span>
                     <Input
                         value={path}
                         onChange={(e) => setPath(e.target.value)}
-                        className="h-6 border-none shadow-none focus-visible:ring-0 px-0 text-xs"
+                        className="h-6 bg-transparent shadow-none focus-visible:ring-0 px-0 text-xs font-mono"
                         onKeyDown={(e) => {
                             if (e.key === "Enter") handleRefresh();
                         }}
@@ -82,17 +85,21 @@ export const PreviewPanel = ({
                     <ExternalLink className="size-3.5" />
                 </Button>
             </div>
+
+            {/* Iframe area */}
             <div className="flex-1 relative">
                 {isLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <div className="absolute inset-0 flex items-center justify-center bg-surface-1/80 backdrop-blur-sm z-10">
+                        <div className="size-8 rounded-full bg-primary/20 animate-pulse" />
                     </div>
                 )}
                 <iframe
                     key={key}
                     ref={iframeRef}
                     src={previewUrl}
-                    className="w-full h-full border-none bg-white"
+                    /* The iframe content (user's app) defines its own bg.
+                       Preview frame stays transparent so transitions feel seamless. */
+                    className="w-full h-full bg-transparent"
                     title="Preview"
                     sandbox="allow-scripts allow-same-origin allow-forms"
                     onLoad={handleLoad}

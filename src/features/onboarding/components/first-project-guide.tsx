@@ -68,7 +68,7 @@ export function FirstProjectGuide({ userId, onComplete }: Props) {
   return (
     <>
       {/* Spotlight cutout — dims the page except over the target. */}
-      <div className="pointer-events-none fixed inset-0 z-40 bg-black/55" />
+      <div className="pointer-events-none fixed inset-0 z-40 bg-scrim/55" />
       {rect && (
         <div
           className="pointer-events-none fixed z-40 rounded-md ring-2 ring-primary"

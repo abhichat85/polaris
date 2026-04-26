@@ -14,16 +14,24 @@ export const TerminalPanel = () => {
     useEffect(() => {
         if (!terminalRef.current || !webcontainer) return;
 
-        // Initialize xterm
+        // Praxiom — terminal theme matches surface-0 (deepest), silver-bright fg, indigo cursor.
+        // Hardcoded values are required because xterm config doesn't accept CSS variables.
         const terminal = new Terminal({
             cursorBlink: true,
             convertEol: true,
             theme: {
-                background: "#1e1e1e",
-                foreground: "#d4d4d4",
+                background: "#0a0a0a",       // surface-0 dark (hsl(0 0% 4%))
+                foreground: "#d1d1d1",       // silver (hsl(0 0% 82%))
+                cursor: "#5c6bff",            // primary / electric indigo
+                selectionBackground: "#1f1f1f", // surface-3 (hsl(0 0% 12%))
+                black: "#0a0a0a",
+                brightBlack: "#404040",
+                white: "#d1d1d1",
+                brightWhite: "#f2f2f2",
             },
-            fontSize: 14,
-            fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+            fontSize: 13,
+            // Praxiom §3.1 — JetBrains Mono is the official mono font
+            fontFamily: "var(--font-jetbrains-mono), 'JetBrains Mono', Menlo, Monaco, 'Courier New', monospace",
         });
 
         const fitAddon = new FitAddon();
@@ -85,5 +93,6 @@ export const TerminalPanel = () => {
         };
     }, [webcontainer]);
 
-    return <div ref={terminalRef} className="h-full w-full bg-[#1e1e1e]" />;
+    // Wrapper bg matches xterm theme.background so there's no flash before init
+    return <div ref={terminalRef} className="h-full w-full bg-surface-0 px-2 pt-1" />;
 };

@@ -1,6 +1,5 @@
 "use client";
 
-import { Poppins } from "next/font/google";
 import { SparkleIcon, Wand2, Plus, Github } from "lucide-react";
 import { FaGithub } from "react-icons/fa";
 import {
@@ -11,7 +10,6 @@ import {
 } from "unique-names-generator";
 import { useEffect, useState } from "react";
 
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 
@@ -20,11 +18,6 @@ import { useCreateProject, useProjects } from "../hooks/use-projects";
 import { ProjectsCommandDialog } from "./projects-command-dialog";
 import { ProjectGeneratorDialog } from "./project-generator-dialog";
 import { ImportDialog } from "./import-dialog";
-
-const font = Poppins({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-})
 
 export const ProjectsView = () => {
   const createProject = useCreateProject();
@@ -68,17 +61,15 @@ export const ProjectsView = () => {
         onOpenChange={setImportOpen}
       />
 
-      <div className="min-h-screen bg-sidebar flex flex-col items-center justify-center p-6 md:p-16">
+      <div className="min-h-screen bg-surface-0 flex flex-col items-center justify-center p-6 md:p-16">
         <div className="w-full max-w-sm mx-auto flex flex-col gap-4 items-center">
 
           <div className="flex justify-between gap-4 w-full items-center">
 
             <div className="flex items-center gap-2 w-full group/logo">
               <img src="/logo.svg" alt="Polaris" className="size-[32px] md:size-[46px]" />
-              <h1 className={cn(
-                "text-4xl md:text-5xl font-semibold",
-                font.className,
-              )}>
+              {/* Praxiom §1.3 — wordmark uses Outfit (font-heading), tight tracking */}
+              <h1 className="font-heading text-4xl md:text-5xl font-semibold tracking-[-0.02em] text-foreground">
                 Polaris
               </h1>
             </div>

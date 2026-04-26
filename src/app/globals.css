@@ -60,6 +60,10 @@
   --color-info: hsl(var(--info));
   --color-info-foreground: hsl(var(--info-foreground));
 
+  /* Scrim — overlay backdrop for modals/sheets/drawers.
+     Dark in both modes (modals always darken what's behind). */
+  --color-scrim: hsl(var(--scrim));
+
   /* Steel / silver palette (Praxiom §2.5) */
   --color-steel: hsl(0 0% 70%);
   --color-steel-dark: hsl(0 0% 50%);
@@ -150,6 +154,9 @@
   --sidebar-border: 0 0% 92%;
   --sidebar-ring: 235 100% 55%;
 
+  /* Scrim — overlay backdrop, identical in both modes */
+  --scrim: 0 0% 0%;
+
   /* Charts */
   --chart-1: 235 100% 55%;
   --chart-2: 150 65% 40%;
@@ -208,6 +215,9 @@
   --sidebar-accent-foreground: 0 0% 92%;
   --sidebar-border: 0 0% 12%;
   --sidebar-ring: 235 100% 65%;
+
+  /* Scrim — overlay backdrop, identical in both modes */
+  --scrim: 0 0% 0%;
 
   /* Charts */
   --chart-1: 235 100% 65%;

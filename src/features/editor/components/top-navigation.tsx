@@ -11,11 +11,9 @@ import { XIcon } from "lucide-react";
 
 const Tab = ({
   fileId,
-  isFirst,
   projectId,
 }: {
   fileId: Id<"files">;
-  isFirst: boolean;
   projectId: Id<"projects">;
 }) => {
   const file = useFile(fileId);
@@ -36,10 +34,11 @@ const Tab = ({
       onClick={() => setActiveTab(fileId)}
       onDoubleClick={() => openFile(fileId, { pinned: true })}
       className={cn(
-        "flex items-center gap-2 h-8.75 pl-2 pr-1.5 cursor-pointer text-muted-foreground group border-y border-x border-transparent hover:bg-accent/30",
-        isActive &&
-          "bg-background text-foreground border-x-border border-b-background -mb-px drop-shadow",
-        isFirst && "border-l-transparent!"
+        // Praxiom — tabs use surface contrast (no borders).
+        // Inactive: muted-foreground on surface-1 nav, hover lifts to surface-2.
+        // Active: surface-0 (= main editor bg) + foreground text — appears "carved out".
+        "flex items-center gap-2 h-8.75 pl-2 pr-1.5 cursor-pointer text-muted-foreground group transition-colors hover:bg-surface-2",
+        isActive && "bg-surface-0 text-foreground hover:bg-surface-0",
       )}
     >
       {file === undefined ? (
@@ -67,7 +66,8 @@ const Tab = ({
           }
         }}
         className={cn(
-          "p-0.5 rounded-sm hover:bg-white/10 opacity-0 group-hover:opacity-100",
+          // Praxiom — close button uses surface-3 hover, not white opacity
+          "p-0.5 rounded-sm hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity",
           isActive && "opacity-100"
         )}
       >
@@ -86,12 +86,12 @@ export const TopNavigation = ({
 
   return (
     <ScrollArea className="flex-1">
-      <nav className="bg-sidebar flex items-center h-8.75 border-b">
-        {openTabs.map((fileId, index) => (
+      {/* Praxiom — tab bar uses surface-1 (matches sidebar/top header level) */}
+      <nav className="bg-surface-1 flex items-center h-8.75">
+        {openTabs.map((fileId) => (
           <Tab
             key={fileId}
             fileId={fileId}
-            isFirst={index === 0}
             projectId={projectId}
           />
         ))}

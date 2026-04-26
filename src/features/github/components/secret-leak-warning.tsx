@@ -41,7 +41,7 @@ export function SecretLeakWarning({ findings, onClose }: Props) {
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim/70 backdrop-blur-sm" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(560px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-surface-2 p-6 shadow-2xl">
           <div className="flex items-start gap-3">
             <div className="mt-1 inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-destructive/15">

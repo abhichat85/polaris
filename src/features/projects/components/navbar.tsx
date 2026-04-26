@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useState } from "react";
 import { CloudCheckIcon, Github, LoaderIcon } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
-import { Poppins } from "next/font/google";
 import { formatDistanceToNow } from "date-fns";
 
 import {
@@ -22,16 +21,10 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { Id } from "../../../../convex/_generated/dataModel";
 import { useProject, useRenameProject } from "../hooks/use-projects";
 import { GitHubDialog } from "./github-dialog";
-
-const font = Poppins({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-})
 
 export const Navbar = ({
   projectId
@@ -70,7 +63,7 @@ export const Navbar = ({
   };
 
   return (
-    <nav className="flex justify-between items-center gap-x-2 p-2 bg-sidebar border-b">
+    <nav className="flex justify-between items-center gap-x-2 px-3 h-14 bg-surface-1 shrink-0">
       <div className="flex items-center gap-x-2">
         <Breadcrumb>
           <BreadcrumbList className="gap-0!">
@@ -91,12 +84,8 @@ export const Navbar = ({
                       width={20}
                       height={20}
                     />
-                    <span
-                      className={cn(
-                        "text-sm font-medium",
-                        font.className,
-                      )}
-                    >
+                    {/* Praxiom §1.3 — wordmark uses font-heading (Outfit), tight tracking */}
+                    <span className="font-heading text-sm font-semibold tracking-tight text-foreground">
                       Polaris
                     </span>
                   </Link>
@@ -114,12 +103,12 @@ export const Navbar = ({
                   onFocus={(e) => e.currentTarget.select()}
                   onBlur={handleSubmit}
                   onKeyDown={handleKeyDown}
-                  className="text-sm bg-transparent text-foreground outline-none focus:ring-1 focus:ring-inset focus:ring-ring font-medium max-w-40 truncate"
+                  className="text-sm bg-transparent text-foreground outline-none focus:ring-1 focus:ring-inset focus:ring-primary font-medium max-w-40 truncate font-heading tracking-[-0.01em]"
                 />
               ) : (
                 <BreadcrumbPage
                   onClick={handleStartRename}
-                  className="text-sm cursor-pointer hover:text-primary font-medium max-w-40 truncate"
+                  className="font-heading text-sm cursor-pointer hover:text-primary font-semibold tracking-[-0.01em] text-foreground max-w-40 truncate transition-colors"
                 >
                   {project?.name ?? "Loading..."}
                 </BreadcrumbPage>

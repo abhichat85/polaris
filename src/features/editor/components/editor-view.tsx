@@ -50,7 +50,8 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
   }, [activeTabId]);
 
   const EditorContent = () => (
-    <div className="flex-1 min-h-0 bg-background h-full flex flex-col">
+    // Praxiom — editor canvas sits on surface-0 (deepest level)
+    <div className="flex-1 min-h-0 bg-surface-0 h-full flex flex-col">
       {activeTabId && <FileBreadcrumbs projectId={projectId} />}
       <div className="flex-1 relative">
         {!activeFile && (
@@ -82,12 +83,12 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
           />
         )}
         {isActiveFileBinary && activeFile && (
-          <div className="size-full flex items-center justify-center p-4 bg-muted/20">
+          <div className="size-full flex items-center justify-center p-4 bg-surface-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={activeFile.url || `/api/preview/${projectId}/${activeFile.name}`}
               alt={activeFile.name}
-              className="max-w-full max-h-full object-contain rounded shadow-sm"
+              className="max-w-full max-h-full object-contain rounded-lg"
             />
           </div>
         )}
@@ -97,9 +98,10 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center border-b bg-sidebar h-9">
+      {/* Tab bar — surface-1 (one step lighter than editor canvas surface-0) */}
+      <div className="flex items-center bg-surface-1 h-9 shrink-0">
         <TopNavigation projectId={projectId} />
-        <div className="flex items-center px-2 border-l h-full">
+        <div className="flex items-center px-2 h-full">
           <Button
             variant={showPreview ? "secondary" : "ghost"}
             size="icon-xs"
