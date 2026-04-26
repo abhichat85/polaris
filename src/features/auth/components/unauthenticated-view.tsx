@@ -26,7 +26,7 @@ export const UnauthenticatedView = () => {
             </ItemDescription>
           </ItemContent>
           <ItemActions>
-            <SignInButton>
+            <SignInButton forceRedirectUrl="/dashboard">
               <Button variant="outline" size="sm">
                 Sign in
               </Button>

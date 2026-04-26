@@ -3,158 +3,478 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* =========================================================================
+   POLARIS = PRAXIOM DESIGN SYSTEM v2.0
+   Single source of truth for all UI/UX decisions.
+   See docs/DESIGN-SYSTEM.md for full specification.
+
+   Two principles drive every decision:
+     1. Surface depth replaces borders — elevation via surface-0..4 tokens.
+     2. Electric Indigo (235 100% 65%) is the only non-neutral hue in
+        structural UI. Reserved for action and intelligence — never decoration.
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. THEME MAPPING — exposes CSS custom props as Tailwind v4 utilities
+   ------------------------------------------------------------------------- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* Fonts (Praxiom §3.1) */
   --font-sans: var(--font-inter);
-  --font-mono: var(--font-plex-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --font-body: var(--font-inter);
+  --font-heading: var(--font-outfit);
+  --font-mono: var(--font-jetbrains-mono);
+
+  /* Core semantic */
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  /* Surface depth tokens (Praxiom §2.3) — the most important pattern */
+  --color-surface-0: hsl(var(--surface-0));
+  --color-surface-1: hsl(var(--surface-1));
+  --color-surface-2: hsl(var(--surface-2));
+  --color-surface-3: hsl(var(--surface-3));
+  --color-surface-4: hsl(var(--surface-4));
+
+  /* Semantic state colors (Praxiom §2.4) */
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+
+  /* Steel / silver palette (Praxiom §2.5) */
+  --color-steel: hsl(0 0% 70%);
+  --color-steel-dark: hsl(0 0% 50%);
+  --color-steel-light: hsl(0 0% 85%);
+  --color-silver: hsl(0 0% 85%);
+  --color-silver-bright: hsl(0 0% 95%);
+  --color-silver-dim: hsl(0 0% 70%);
+
+  /* Sidebar tokens (Praxiom §2.6) */
+  --color-sidebar: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  /* Charts (kept for shadcn chart component) */
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  /* Border radius (Praxiom §5) — base 12px */
+  --radius-sm: 8px;
+  --radius-md: 10px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+
+  /* Shadows (Praxiom §6) */
+  --shadow-elegant: 0 4px 16px hsl(0 0% 0% / 0.4);
+  --shadow-glow: 0 0 40px hsl(235 100% 65% / 0.2);
+  --shadow-steel: 0 4px 20px hsl(0 0% 50% / 0.2);
 }
 
+/* -------------------------------------------------------------------------
+   2. LIGHT MODE  (Praxiom §2.2 .light)
+   ------------------------------------------------------------------------- */
 :root {
-  --radius: 0.475rem;
-  --background: oklch(0.2925 0.0157 264.3);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.25 0.012 264.34);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.3404 0.0205 265.97);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --separator-border: oklch(1 0 0 / 10%);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.6562 0.1826 262.74);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.25 0.012 264.34);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.75rem;
+
+  /* Core */
+  --background: 0 0% 98%;
+  --foreground: 0 0% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 10%;
+  --primary: 235 100% 55%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 10%;
+  --muted: 0 0% 94%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 94%;
+  --accent-foreground: 0 0% 10%;
+  --destructive: 0 70% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 92%;
+  --input: 0 0% 96%;
+  --ring: 235 100% 55%;
+
+  /* Surface depth */
+  --surface-0: 0 0% 100%;
+  --surface-1: 0 0% 98%;
+  --surface-2: 0 0% 96%;
+  --surface-3: 0 0% 94%;
+  --surface-4: 0 0% 92%;
+
+  /* Semantic state */
+  --success: 150 65% 40%;
+  --success-foreground: 0 0% 100%;
+  --warning: 35 85% 50%;
+  --warning-foreground: 0 0% 10%;
+  --info: 210 80% 50%;
+  --info-foreground: 0 0% 100%;
+
+  /* Sidebar */
+  --sidebar-background: 0 0% 98%;
+  --sidebar-foreground: 0 0% 15%;
+  --sidebar-primary: 235 100% 55%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 94%;
+  --sidebar-accent-foreground: 0 0% 15%;
+  --sidebar-border: 0 0% 92%;
+  --sidebar-ring: 235 100% 55%;
+
+  /* Charts */
+  --chart-1: 235 100% 55%;
+  --chart-2: 150 65% 40%;
+  --chart-3: 35 85% 50%;
+  --chart-4: 210 80% 50%;
+  --chart-5: 280 70% 55%;
 }
 
+/* -------------------------------------------------------------------------
+   3. DARK MODE  (Praxiom §2.2 :root — default for the app)
+   ------------------------------------------------------------------------- */
 .dark {
-  --background: oklch(0.2925 0.0157 264.3);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.25 0.012 264.34);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.25 0.012 264.34);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.25 0.012 264.34);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.25 0.012 264.34);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.3404 0.0205 265.97);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --separator-border: oklch(1 0 0 / 10%);
-  --ring: oklch(0.6562 0.1826 262.74);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.25 0.012 264.34);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Core */
+  --background: 0 0% 5%;
+  --foreground: 0 0% 95%;
+  --card: 0 0% 8%;
+  --card-foreground: 0 0% 95%;
+  --popover: 0 0% 7%;
+  --popover-foreground: 0 0% 95%;
+  --primary: 235 100% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 95%;
+  --muted: 0 0% 10%;
+  --muted-foreground: 0 0% 55%;
+  --accent: 0 0% 12%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 65% 50%;
+  --destructive-foreground: 0 0% 100%;
+  /* Borders are NOT used for structure — surface depth instead */
+  --border: 0 0% 12%;
+  --input: 0 0% 10%;
+  --ring: 235 100% 65%;
+
+  /* Surface depth — the most important pattern */
+  --surface-0: 0 0% 4%;
+  --surface-1: 0 0% 6%;
+  --surface-2: 0 0% 9%;
+  --surface-3: 0 0% 12%;
+  --surface-4: 0 0% 15%;
+
+  /* Semantic state */
+  --success: 150 70% 45%;
+  --success-foreground: 0 0% 100%;
+  --warning: 35 90% 55%;
+  --warning-foreground: 0 0% 10%;
+  --info: 210 80% 55%;
+  --info-foreground: 0 0% 100%;
+
+  /* Sidebar */
+  --sidebar-background: 0 0% 5%;
+  --sidebar-foreground: 0 0% 92%;
+  --sidebar-primary: 235 100% 65%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 10%;
+  --sidebar-accent-foreground: 0 0% 92%;
+  --sidebar-border: 0 0% 12%;
+  --sidebar-ring: 235 100% 65%;
+
+  /* Charts */
+  --chart-1: 235 100% 65%;
+  --chart-2: 150 70% 45%;
+  --chart-3: 35 90% 55%;
+  --chart-4: 210 80% 55%;
+  --chart-5: 280 75% 65%;
 }
 
+/* -------------------------------------------------------------------------
+   4. BASE LAYER — global element styling
+   ------------------------------------------------------------------------- */
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
 
-@layer base {
+  body {
+    @apply bg-background text-foreground font-body;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Praxiom §3.4 — every heading uses Outfit, semibold, tight tracking */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-outfit), system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* JetBrains Mono — tabular numerals for all numeric stats */
+  .font-mono,
+  code,
+  kbd,
+  samp,
+  pre {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
   button:not([disabled]),
   [role="button"]:not([disabled]) {
     cursor: pointer;
   }
 }
 
+/* -------------------------------------------------------------------------
+   5. SCROLLBARS (Praxiom §10) — thin, subtle, surface-toned
+   ------------------------------------------------------------------------- */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--surface-3)) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--surface-3));
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--surface-4));
+}
+
+/* Default scrollbar — slightly wider for main scroll regions */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--surface-3));
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--surface-4));
+}
+
+/* -------------------------------------------------------------------------
+   6. ANIMATIONS (Praxiom §9.2) — operational, restrained, never playful
+   ------------------------------------------------------------------------- */
 @theme inline {
+  --animate-blink: blink 0.8s step-end infinite;
+  --animate-chat-enter: chat-enter 0.2s ease-out;
+  --animate-pulse-dot: pulse-dot 1.4s ease-out infinite;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-shimmer-line: shimmer-line 1.8s ease-in-out infinite;
+  --animate-fade-in-up: fade-in-up 0.4s ease-out;
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-in-right: slide-in-right 0.3s ease-out;
+  --animate-scale-in: scale-in 0.2s ease-out;
   --animate-cell-ripple: cell-ripple var(--duration, 200ms) ease-out none 1
     var(--delay, 0ms);
 
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  @keyframes chat-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.3; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  @keyframes shimmer-line {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
   @keyframes cell-ripple {
-    0% {
-      opacity: 0.4;
-    }
-    50% {
-      opacity: 0.8;
-    }
-    100% {
-      opacity: 0.4;
-    }
+    0% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.4; }
   }
 }
 
-::-webkit-scrollbar {
-  @apply w-2.5 h-2.5;
+/* -------------------------------------------------------------------------
+   7. CODE & SYNTAX HIGHLIGHTING (Praxiom §11)
+   highlight.js token theme — applied to .hljs containers
+   ------------------------------------------------------------------------- */
+.hljs {
+  background: transparent;
+  color: hsl(0 0% 82%);
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-tag,
+.hljs-name {
+  color: hsl(235 85% 72%);
+}
+.hljs-string,
+.hljs-bullet,
+.hljs-meta-string {
+  color: hsl(150 55% 62%);
+}
+.hljs-comment,
+.hljs-quote {
+  color: hsl(0 0% 42%);
+  font-style: italic;
+}
+.hljs-number,
+.hljs-literal {
+  color: hsl(35 85% 62%);
+}
+.hljs-function,
+.hljs-title.function_,
+.hljs-built_in {
+  color: hsl(190 75% 62%);
+}
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-title.class_ {
+  color: hsl(270 55% 68%);
+}
+.hljs-regexp {
+  color: hsl(10 70% 65%);
+}
+.hljs-operator,
+.hljs-punctuation {
+  color: hsl(0 0% 52%);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable {
+  color: hsl(0 0% 82%);
 }
 
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
+/* -------------------------------------------------------------------------
+   8. PROSEMIRROR / TIPTAP (Praxiom §12)
+   ------------------------------------------------------------------------- */
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
 }
-
-::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-border border-[1px] border-transparent border-solid bg-clip-padding;
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.ProseMirror ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+}
+.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"] {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 4px;
+  background-color: hsl(var(--surface-3));
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked {
+  background-color: hsl(var(--primary));
+}
+.ProseMirror ul[data-type="taskList"] li > label > input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--primary-foreground));
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+.ProseMirror table th {
+  background-color: hsl(var(--surface-2));
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.dark .ProseMirror table td,
+.dark .ProseMirror table th {
+  border: 1px solid hsl(0 0% 100% / 0.05);
+}
+.ProseMirror table .selectedCell {
+  background-color: hsl(var(--primary) / 0.08);
+}
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+  border-radius: 8px;
 }

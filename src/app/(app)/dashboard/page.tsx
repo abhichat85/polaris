@@ -1,7 +1,5 @@
 import { ProjectsView } from "@/features/projects/components/projects-view";
 
-const Home = () => {
-  return <ProjectsView />
-};
-
-export default Home;
+export default function DashboardPage() {
+  return <ProjectsView />;
+}

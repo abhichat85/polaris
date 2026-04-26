@@ -20,7 +20,7 @@ const MIME_TYPES: Record<string, string> = {
 
 export async function GET(
     request: Request,
-    { params }: { params: { projectId: string; path: string[] } }
+    { params }: { params: Promise<{ projectId: string; path: string[] }> }
 ) {
     const { userId } = await auth();
 
@@ -28,7 +28,7 @@ export async function GET(
         return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    const { projectId, path } = params;
+    const { projectId, path } = await params;
     const filePath = path.join("/");
 
     try {
