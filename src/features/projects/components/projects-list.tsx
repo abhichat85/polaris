@@ -49,10 +49,11 @@ const ContinueCard = ({
       <span className="text-xs text-muted-foreground">
         Last updated
       </span>
+      {/* Praxiom — borderless continue-card on surface-2, hover lifts to surface-3 */}
       <Button
-        variant="outline"
+        variant="ghost"
         asChild
-        className="h-auto items-start justify-start p-4 bg-background border rounded-none flex flex-col gap-2"
+        className="h-auto items-start justify-start p-4 bg-surface-2 hover:bg-surface-3 rounded-lg flex flex-col gap-2 text-foreground"
       >
         <Link href={`/projects/${data._id}`} className="group">
           <div className="flex items-center justify-between w-full">
@@ -119,7 +120,7 @@ export const ProjectsList = ({
               className="flex items-center gap-2 text-muted-foreground text-xs hover:text-foreground transition-colors"
             >
               <span>View all</span>
-              <Kbd className="bg-accent border">
+              <Kbd className="bg-surface-3 text-muted-foreground">
                 ⌘K
               </Kbd>
             </button>

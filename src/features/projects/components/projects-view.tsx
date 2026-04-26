@@ -78,8 +78,9 @@ export const ProjectsView = () => {
 
           <div className="flex flex-col gap-4 w-full">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {/* Praxiom — borderless action cards on surface-2, hover lifts to surface-3 */}
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => {
                   const projectName = uniqueNamesGenerator({
                     dictionaries: [
@@ -95,50 +96,50 @@ export const ProjectsView = () => {
                     name: projectName,
                   });
                 }}
-                className="h-full items-start justify-start p-4 bg-background border flex flex-col gap-6 rounded-none"
+                className="h-auto items-start justify-start p-4 bg-surface-2 hover:bg-surface-3 flex flex-col gap-6 rounded-lg text-foreground"
               >
                 <div className="flex items-center justify-between w-full">
-                  <SparkleIcon className="size-4" />
-                  <Kbd className="bg-accent border">
+                  <SparkleIcon className="size-4 text-primary" />
+                  <Kbd className="bg-surface-3 text-muted-foreground">
                     ⌘J
                   </Kbd>
                 </div>
                 <div>
-                  <span className="text-sm">
+                  <span className="text-sm font-medium">
                     New
                   </span>
                 </div>
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => setGeneratorOpen(true)}
-                className="h-full items-start justify-start p-4 bg-background border flex flex-col gap-6 rounded-none"
+                className="h-auto items-start justify-start p-4 bg-surface-2 hover:bg-surface-3 flex flex-col gap-6 rounded-lg text-foreground"
               >
                 <div className="flex items-center justify-between w-full">
-                  <Wand2 className="size-4" />
-                  <Kbd className="bg-accent border">
+                  <Wand2 className="size-4 text-primary" />
+                  <Kbd className="bg-surface-3 text-muted-foreground">
                     ⌘G
                   </Kbd>
                 </div>
                 <div>
-                  <span className="text-sm">
+                  <span className="text-sm font-medium">
                     Generate
                   </span>
                 </div>
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => setImportOpen(true)}
-                className="h-full items-start justify-start p-4 bg-background border flex flex-col gap-6 rounded-none"
+                className="h-auto items-start justify-start p-4 bg-surface-2 hover:bg-surface-3 flex flex-col gap-6 rounded-lg text-foreground"
               >
                 <div className="flex items-center justify-between w-full">
-                  <Github className="size-4" />
-                  <Kbd className="bg-accent border">
+                  <Github className="size-4 text-primary" />
+                  <Kbd className="bg-surface-3 text-muted-foreground">
                     ⌘I
                   </Kbd>
                 </div>
                 <div>
-                  <span className="text-sm">
+                  <span className="text-sm font-medium">
                     Import
                   </span>
                 </div>
