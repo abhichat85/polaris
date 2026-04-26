@@ -76,19 +76,21 @@ const RailButton = ({
 
 interface IdeRailProps {
   filesOpen: boolean;
+  specOpen: boolean;
   agentOpen: boolean;
   onToggleFiles: () => void;
+  onToggleSpec: () => void;
   onToggleAgent: () => void;
-  onOpenSpec?: () => void;
   onOpenExport?: () => void;
 }
 
 export const IdeRail = ({
   filesOpen,
+  specOpen,
   agentOpen,
   onToggleFiles,
+  onToggleSpec,
   onToggleAgent,
-  onOpenSpec,
   onOpenExport,
 }: IdeRailProps) => {
   const router = useRouter();
@@ -118,15 +120,16 @@ export const IdeRail = ({
       onClick={onToggleFiles}
     />
     <RailButton
+      icon={FileTextIcon}
+      label={specOpen ? "Hide spec" : "Show spec"}
+      active={specOpen}
+      onClick={onToggleSpec}
+    />
+    <RailButton
       icon={MessageSquareIcon}
       label={agentOpen ? "Hide agent" : "Show agent"}
       active={agentOpen}
       onClick={onToggleAgent}
-    />
-    <RailButton
-      icon={FileTextIcon}
-      label="Spec (coming soon)"
-      onClick={onOpenSpec}
     />
     <RailButton
       icon={GithubIcon}

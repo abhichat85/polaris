@@ -64,6 +64,7 @@ export const CodeEditor = ({
   }, [languageExtension]);
 
   return (
-    <div ref={editorRef} className="size-full pl-4 bg-background" />
+    // Praxiom §2.3 — editor surface uses surface-0 (deepest, matches IDE base).
+    <div ref={editorRef} className="size-full pl-4 bg-surface-0" />
   );
 };

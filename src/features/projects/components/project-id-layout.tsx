@@ -20,19 +20,23 @@ import { useState } from "react";
 import { Allotment } from "allotment";
 
 import { ConversationSidebar } from "@/features/conversations/components/conversation-sidebar";
+import { SpecPanel } from "@/features/specs/components/spec-panel";
 import { FileExplorer } from "./file-explorer";
 import { IdeRail } from "./ide-rail";
 import { ProjectTopbar } from "./project-topbar";
 import { GitHubDialog } from "./github-dialog";
 import { Id } from "../../../../convex/_generated/dataModel";
 
-const FILES_DEFAULT = 260;
-const FILES_MIN = 200;
-const FILES_MAX = 480;
+const LEFT_DEFAULT = 320;
+const LEFT_MIN = 240;
+const LEFT_MAX = 560;
 
 const AGENT_DEFAULT = 400;
 const AGENT_MIN = 320;
 const AGENT_MAX = 720;
+
+/** What's showing in the left pane: files (default) or spec (Polaris differentiator). */
+type LeftPaneMode = "files" | "spec" | "hidden";
 
 export const ProjectIdLayout = ({
   children,
@@ -41,16 +45,25 @@ export const ProjectIdLayout = ({
   children: React.ReactNode;
   projectId: Id<"projects">;
 }) => {
-  const [filesOpen, setFilesOpen] = useState(true);
+  const [leftMode, setLeftMode] = useState<LeftPaneMode>("files");
   const [agentOpen, setAgentOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
+
+  // Praxiom — toggling files: closed → open files; open files → closed.
+  // Spec slot toggles independently within the same pane.
+  const handleToggleFiles = () =>
+    setLeftMode((m) => (m === "files" ? "hidden" : "files"));
+  const handleToggleSpec = () =>
+    setLeftMode((m) => (m === "spec" ? "hidden" : "spec"));
 
   return (
     <div className="w-full h-screen flex bg-surface-0 overflow-hidden">
       <IdeRail
-        filesOpen={filesOpen}
+        filesOpen={leftMode === "files"}
+        specOpen={leftMode === "spec"}
         agentOpen={agentOpen}
-        onToggleFiles={() => setFilesOpen((v) => !v)}
+        onToggleFiles={handleToggleFiles}
+        onToggleSpec={handleToggleSpec}
         onToggleAgent={() => setAgentOpen((v) => !v)}
         onOpenExport={() => setExportOpen(true)}
       />
@@ -65,12 +78,16 @@ export const ProjectIdLayout = ({
           <Allotment proportionalLayout={false}>
             <Allotment.Pane
               snap
-              visible={filesOpen}
-              minSize={FILES_MIN}
-              maxSize={FILES_MAX}
-              preferredSize={FILES_DEFAULT}
+              visible={leftMode !== "hidden"}
+              minSize={LEFT_MIN}
+              maxSize={LEFT_MAX}
+              preferredSize={LEFT_DEFAULT}
             >
-              <FileExplorer projectId={projectId} />
+              {leftMode === "spec" ? (
+                <SpecPanel projectId={projectId} />
+              ) : (
+                <FileExplorer projectId={projectId} />
+              )}
             </Allotment.Pane>
 
             <Allotment.Pane minSize={300}>{children}</Allotment.Pane>

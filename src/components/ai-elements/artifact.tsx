@@ -16,7 +16,8 @@ export type ArtifactProps = HTMLAttributes<HTMLDivElement>;
 export const Artifact = ({ className, ...props }: ArtifactProps) => (
   <div
     className={cn(
-      "flex flex-col overflow-hidden rounded-lg border bg-background shadow-sm",
+      // Praxiom §2.3 — artifact card uses surface-2 over surface-1 chat.
+      "flex flex-col overflow-hidden rounded-lg bg-surface-2 shadow-elegant",
       className
     )}
     {...props}

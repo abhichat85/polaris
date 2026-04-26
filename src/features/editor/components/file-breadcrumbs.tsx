@@ -25,7 +25,7 @@ export const FileBreadcrumbs = ({
 
   if (filePath === undefined || !activeTabId) {
     return (
-      <div className="p-2 bg-background pl-4 border-b">
+      <div className="p-2 bg-surface-0 pl-4">
         <Breadcrumb>
           <BreadcrumbList className="sm:gap-0.5 gap-0.5">
             <BreadcrumbItem className="text-sm">

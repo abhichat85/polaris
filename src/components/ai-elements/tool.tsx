@@ -24,7 +24,8 @@ export type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
-    className={cn("not-prose mb-4 w-full rounded-md border", className)}
+    // Praxiom §2.3 — tool call card uses surface-2 over surface-1 chat.
+    className={cn("not-prose mb-4 w-full rounded-md bg-surface-2", className)}
     {...props}
   />
 );
