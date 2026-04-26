@@ -493,6 +493,28 @@ export const getProjectFilesInternal = query({
   },
 });
 
+/**
+ * Client-facing authenticated read. Verifies the caller is signed in via
+ * Clerk + owns the project, then returns the file list. No internalKey
+ * needed — never expose that secret to the browser.
+ */
+export const getProjectFiles = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("unauthorized");
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("project_not_found");
+    if (project.ownerId !== identity.subject) throw new Error("forbidden");
+
+    return await ctx.db
+      .query("files")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
 export const createProjectInternal = mutation({
   args: {
     internalKey: v.string(),

@@ -47,7 +47,7 @@ export const WebContainerProvider = ({
     const [serverUrl, setServerUrl] = useState<string | null>(null);
 
     const bootedRef = useRef(false);
-    const files = useQuery(api.system.getProjectFilesInternal, { projectId });
+    const files = useQuery(api.system.getProjectFiles, { projectId });
 
     useEffect(() => {
         const boot = async () => {

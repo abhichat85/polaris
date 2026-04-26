@@ -2,7 +2,32 @@ import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  /**
+   * Cross-Origin Isolation headers required by WebContainers (StackBlitz).
+   * SharedArrayBuffer is only available when a page is cross-origin isolated.
+   * Scoped to /projects/* so marketing / auth pages are unaffected.
+   *
+   * Docs: https://webcontainers.io/guides/browser-support
+   */
+  async headers() {
+    return [
+      {
+        source: "/projects/:path*",
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+        ],
+      },
+      // The WebContainer iframe assets are served from the same origin;
+      // static Next.js assets loaded inside the project view also need CORP.
+      {
+        source: "/_next/:path*",
+        headers: [
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
+        ],
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(nextConfig, {
