@@ -17,10 +17,13 @@ import type * as customers from "../customers.js";
 import type * as deployments from "../deployments.js";
 import type * as files from "../files.js";
 import type * as files_by_path from "../files_by_path.js";
+import type * as integrations from "../integrations.js";
 import type * as projects from "../projects.js";
 import type * as specs from "../specs.js";
 import type * as system from "../system.js";
 import type * as usage from "../usage.js";
+import type * as user_profiles from "../user_profiles.js";
+import type * as waitlist from "../waitlist.js";
 
 import type {
   ApiFromModules,
@@ -38,10 +41,13 @@ declare const fullApi: ApiFromModules<{
   deployments: typeof deployments;
   files: typeof files;
   files_by_path: typeof files_by_path;
+  integrations: typeof integrations;
   projects: typeof projects;
   specs: typeof specs;
   system: typeof system;
   usage: typeof usage;
+  user_profiles: typeof user_profiles;
+  waitlist: typeof waitlist;
 }>;
 
 /**

@@ -285,6 +285,71 @@ export default defineSchema({
     praxiomDocumentId: v.optional(v.string()),
   }).index("by_project", ["projectId"]),
 
+  // ── Sub-plan 06 (GitHub integration) ─────────────────────────────────────
+  /**
+   * Per-user OAuth tokens encrypted at rest. Authority: CONSTITUTION §11.2,
+   * §13.2, §13.3, sub-plan 06 Task 3. Tokens are AES-256-GCM-packed strings
+   * stored in `*Enc` fields — they are never logged, never returned to the
+   * client, only decrypted server-side just-in-time.
+   */
+  integrations: defineTable({
+    /** Clerk userId. One row per (user, provider). */
+    userId: v.string(),
+    provider: v.literal("github"),
+    /** GitHub login (e.g. "octocat"); shown in UI. */
+    accountLogin: v.string(),
+    /** GitHub numeric account id (stable across renames). */
+    accountId: v.string(),
+    /** Encrypted access token. Format: iv:tag:ct (base64 segments). */
+    accessTokenEnc: v.string(),
+    /** Optional encrypted refresh token (PAT GitHub doesn't issue these). */
+    refreshTokenEnc: v.optional(v.string()),
+    /** Granted scopes — for UX ("re-connect to push private repos"). */
+    scopes: v.array(v.string()),
+    /** ms-since-epoch; 0 if non-expiring. */
+    expiresAt: v.number(),
+    connectedAt: v.number(),
+    /** Last time we used this token successfully (for stale-token UI). */
+    lastUsedAt: v.optional(v.number()),
+  })
+    .index("by_user_provider", ["userId", "provider"])
+    .index("by_account", ["provider", "accountId"]),
+
+  /**
+   * Waitlist for non-allowlisted Clerk signups (sub-plan 10 Task 1/3).
+   */
+  waitlist: defineTable({
+    email: v.string(),
+    referrer: v.optional(v.string()),
+    requestedAt: v.number(),
+    /** "pending" | "invited" | "rejected". */
+    status: v.union(v.literal("pending"), v.literal("invited"), v.literal("rejected")),
+    invitedAt: v.optional(v.number()),
+    notes: v.optional(v.string()),
+  }).index("by_email", ["email"]).index("by_status", ["status"]),
+
+  /**
+   * Onboarding state per user (sub-plan 10 Task 1).
+   */
+  user_profiles: defineTable({
+    userId: v.string(),
+    onboardingCompleted: v.boolean(),
+    /** Step the user is on. Steps: "welcome", "starter", "tour", "done". */
+    onboardingStep: v.string(),
+    /** Marketing opt-in collected at signup. */
+    marketingOptIn: v.optional(v.boolean()),
+    /** Cookie consent flags. */
+    cookieConsent: v.optional(
+      v.object({
+        analytics: v.boolean(),
+        marketing: v.boolean(),
+        timestamp: v.number(),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   // ── Sub-plan 07 (deploy pipeline) ────────────────────────────────────────
   deployments: defineTable({
     projectId: v.id("projects"),
