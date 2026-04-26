@@ -5,6 +5,7 @@ import { demoError, demoGenerate } from "@/inngest/functions";
 import { processMessage } from "@/features/conversations/inngest/process-message";
 import { agentLoop } from "@/features/conversations/inngest/agent-loop";
 import { exportToGitHub } from "@/features/projects/inngest/github-export";
+import { deployPipeline } from "@/features/deploy/inngest/deploy-pipeline";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -14,5 +15,6 @@ export const { GET, POST, PUT } = serve({
     processMessage,    // legacy — being replaced by agentLoop (Article XIX migration)
     agentLoop,         // new — uses ModelAdapter + AgentRunner per sub-plan 01
     exportToGitHub,
+    deployPipeline,    // sub-plan 07
   ],
 });

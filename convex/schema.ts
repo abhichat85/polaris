@@ -284,4 +284,26 @@ export default defineSchema({
     ),
     praxiomDocumentId: v.optional(v.string()),
   }).index("by_project", ["projectId"]),
+
+  // ── Sub-plan 07 (deploy pipeline) ────────────────────────────────────────
+  deployments: defineTable({
+    projectId: v.id("projects"),
+    userId: v.string(),
+    status: v.union(
+      v.literal("provisioning_db"),
+      v.literal("running_migrations"),
+      v.literal("env_capture"),
+      v.literal("deploying"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+    ),
+    /** Human-readable name of the current step (e.g. "Wait for Supabase"). */
+    currentStep: v.string(),
+    vercelDeploymentId: v.optional(v.string()),
+    supabaseProjectRef: v.optional(v.string()),
+    liveUrl: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }).index("by_project", ["projectId"]),
 })
