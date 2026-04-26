@@ -77,7 +77,13 @@ export class TokenBucketLimiter {
   }
 }
 
-/** Five canonical buckets per CONSTITUTION §13.4. Tunable via env later. */
+/**
+ * Five canonical buckets per CONSTITUTION §13.4.
+ *
+ * Each bucket is the in-memory TokenBucketLimiter — tests call .check() directly.
+ * Production middleware should call `pickLimiter(cfg, fallback)` from
+ * upstash-limiter.ts to opportunistically use Upstash when env vars are set.
+ */
 export const limiters = {
   httpGlobal: new TokenBucketLimiter({ capacity: 60, refillPerSec: 1 }), // 60/min
   agentRun: new TokenBucketLimiter({ capacity: 5, refillPerSec: 5 / 60 }), // 5/min
@@ -85,3 +91,12 @@ export const limiters = {
   deploy: new TokenBucketLimiter({ capacity: 2, refillPerSec: 2 / 60 }), // 2/min
   githubPush: new TokenBucketLimiter({ capacity: 5, refillPerSec: 5 / 60 }),
 }
+
+/** Bucket configuration mirrored for the remote (Upstash) limiter. */
+export const limiterConfigs = {
+  httpGlobal: { prefix: "http", capacity: 60, windowSec: 60 },
+  agentRun: { prefix: "agent", capacity: 5, windowSec: 60 },
+  scaffold: { prefix: "scaffold", capacity: 3, windowSec: 60 },
+  deploy: { prefix: "deploy", capacity: 2, windowSec: 60 },
+  githubPush: { prefix: "ghpush", capacity: 5, windowSec: 60 },
+} as const

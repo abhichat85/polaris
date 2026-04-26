@@ -47,7 +47,14 @@ export const WebContainerProvider = ({
     const [serverUrl, setServerUrl] = useState<string | null>(null);
 
     const bootedRef = useRef(false);
-    const files = useQuery(api.system.getProjectFilesInternal, { projectId });
+    // Legacy WebContainer flow — NEXT_PUBLIC fallback because this query
+    // pre-dates the server-side internal-mutation pattern. Safe at runtime
+    // since this component only mounts when the WebContainer feature flag is on.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const files = useQuery(api.system.getProjectFilesInternal as any, {
+        projectId,
+        internalKey: process.env.NEXT_PUBLIC_POLARIS_CONVEX_INTERNAL_KEY ?? "",
+    } as never) as { _id: string; parentId?: string; name: string; type: string; content?: string; storageId?: string }[] | undefined;
 
     useEffect(() => {
         const boot = async () => {
@@ -61,8 +68,9 @@ export const WebContainerProvider = ({
                 const instance = await WebContainer.boot();
                 bootedRef.current = true;
 
-                const fileMap = new Map<string, typeof files>();
-                const filesByParent = new Map<string | undefined, typeof files>();
+                type WCFile = NonNullable<typeof files>[number];
+                const fileMap = new Map<string, WCFile>();
+                const filesByParent = new Map<string | undefined, WCFile[]>();
 
                 for (const file of files) {
                     fileMap.set(file._id, file);

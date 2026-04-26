@@ -1,81 +1,54 @@
-import { auth } from "@clerk/nextjs/server";
-import { fetchMutation, fetchAction } from "convex/nextjs";
-import { api } from "../../../../../convex/_generated/api";
-import { fetchAndUnzipRepository, parseGitHubUrl } from "@/lib/github-import";
-import { Id } from "../../../../../convex/_generated/dataModel";
+/**
+ * Enqueue a GitHub repo import. Authority: sub-plan 06 Task 12.
+ *
+ * Body: { projectId, owner, repo, ref? }
+ * Returns 202 Accepted with the Inngest event id; the actual work runs in
+ * `features/github/inngest/import-repo.ts`.
+ */
 
-export async function POST(req: Request) {
-    try {
-        const { userId } = await auth();
-        if (!userId) {
-            return new Response("Unauthorized", { status: 401 });
-        }
+import { NextResponse, type NextRequest } from "next/server"
+import { auth } from "@clerk/nextjs/server"
+import { z } from "zod"
+import { inngest } from "@/inngest/client"
+import { limiters } from "@/lib/rate-limit/limiter"
 
-        const body = await req.json();
-        const { url, name } = body;
+const Body = z.object({
+  projectId: z.string().min(1),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  ref: z.string().optional(),
+})
 
-        if (!url) {
-            return new Response("Missing URL", { status: 400 });
-        }
+export async function POST(req: NextRequest) {
+  const { userId } = await auth()
+  if (!userId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  }
 
-        const repoInfo = await parseGitHubUrl(url);
-        if (!repoInfo) {
-            return new Response("Invalid GitHub URL", { status: 400 });
-        }
+  const decision = await limiters.githubPush.check(userId)
+  if (!decision.ok) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      { status: 429, headers: { "Retry-After": String(decision.retryAfterSec) } },
+    )
+  }
 
-        // 1. Fetch and unzip files
-        // Note: This fetches public repos. For private, we'd need to pass a token.
-        // For now assuming public or simple flow.
-        const files = await fetchAndUnzipRepository(repoInfo.owner, repoInfo.repo);
+  let body: z.infer<typeof Body>
+  try {
+    body = Body.parse(await req.json())
+  } catch (e) {
+    return NextResponse.json(
+      { error: "invalid_body", detail: e instanceof Error ? e.message : "unknown" },
+      { status: 400 },
+    )
+  }
 
-        // 2. Create Project
-        const projectName = name || repoInfo.repo;
-        const projectId = await fetchMutation(api.system.createProjectInternal, {
-            internalKey: process.env.POLARIS_CONVEX_INTERNAL_KEY!,
-            name: projectName,
-            ownerId: userId,
-        });
-
-        // 3. Create Files
-        for (const file of files) {
-            let storageId: Id<"_storage"> | undefined;
-
-            if (file.isBinary && Buffer.isBuffer(file.content)) {
-                // Upload binary content to Storage
-                const uploadUrl = await fetchMutation(api.system.generateUploadUrl, {
-                    internalKey: process.env.POLARIS_CONVEX_INTERNAL_KEY!,
-                });
-
-                const uploadResponse = await fetch(uploadUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/octet-stream" }, // Or detect mime type
-                    body: file.content,
-                });
-
-                if (!uploadResponse.ok) {
-                    console.error(`Failed to upload ${file.path}`);
-                    continue;
-                }
-
-                const { storageId: sid } = await uploadResponse.json();
-                storageId = sid;
-            }
-
-            await fetchMutation(api.system.createFileInternal, {
-                internalKey: process.env.POLARIS_CONVEX_INTERNAL_KEY!,
-                projectId,
-                name: file.path.startsWith("/") ? file.path.slice(1) : file.path, // Remove leading slash if present
-                content: typeof file.content === "string" ? file.content : undefined,
-                storageId,
-            });
-        }
-
-        return Response.json({ projectId });
-    } catch (error) {
-        console.error("Import error:", error);
-        return new Response(
-            error instanceof Error ? error.message : "Internal Server Error",
-            { status: 500 }
-        );
-    }
+  const ev = await inngest.send({
+    name: "github/import.requested",
+    data: { ...body, userId },
+  })
+  return NextResponse.json(
+    { ok: true, ids: ev.ids },
+    { status: 202 },
+  )
 }

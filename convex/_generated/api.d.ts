@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as account from "../account.js";
 import type * as agent_checkpoints from "../agent_checkpoints.js";
 import type * as agent_messages from "../agent_messages.js";
 import type * as auth from "../auth.js";
@@ -32,6 +33,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  account: typeof account;
   agent_checkpoints: typeof agent_checkpoints;
   agent_messages: typeof agent_messages;
   auth: typeof auth;
