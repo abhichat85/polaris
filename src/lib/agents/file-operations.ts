@@ -6,7 +6,7 @@
 import { convex } from "@/lib/convex-client";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
-import { FileTreeNode, AgentContext } from "./types";
+import { FileTreeNode, AgentContext } from "./legacy-types";
 
 /**
  * Read file content by file ID

@@ -15,11 +15,25 @@ export default defineConfig({
   test: {
     globals: true,
     setupFiles: ["./tests/setup.ts"],
-    include: ["tests/unit/**/*.test.{ts,tsx}"],
     exclude: ["node_modules", ".next", "dist"],
-    environmentMatchGlobs: [
-      ["tests/unit/**/*.test.tsx", "jsdom"],
-      ["tests/unit/**/*.test.ts", "node"],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "node",
+          environment: "node",
+          include: ["tests/unit/**/*.test.ts"],
+          exclude: ["**/*.test.tsx", "node_modules", ".next", "dist"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "jsdom",
+          environment: "jsdom",
+          include: ["tests/unit/**/*.test.tsx"],
+        },
+      },
     ],
     coverage: {
       provider: "v8",

@@ -1,0 +1,82 @@
+import { auth } from "@clerk/nextjs/server";
+import { fetchMutation, fetchAction } from "convex/nextjs";
+import { api } from "../../../../../convex/_generated/api";
+import { fetchAndUnzipRepository, parseGitHubUrl } from "@/lib/github-import";
+import { Id } from "../../../../../convex/_generated/dataModel";
+
+export async function POST(req: Request) {
+    try {
+        const { userId } = await auth();
+        if (!userId) {
+            return new Response("Unauthorized", { status: 401 });
+        }
+
+        const body = await req.json();
+        const { url, name } = body;
+
+        if (!url) {
+            return new Response("Missing URL", { status: 400 });
+        }
+
+        const repoInfo = await parseGitHubUrl(url);
+        if (!repoInfo) {
+            return new Response("Invalid GitHub URL", { status: 400 });
+        }
+
+        // 1. Fetch and unzip files
+        // Note: This fetches public repos. For private, we'd need to pass a token.
+        // For now assuming public or simple flow.
+        const files = await fetchAndUnzipRepository(repoInfo.owner, repoInfo.repo);
+
+        // 2. Create Project
+        const projectName = name || repoInfo.repo;
+        const projectId = await fetchMutation(api.system.createProjectInternal, {
+            internalKey: process.env.POLARIS_CONVEX_INTERNAL_KEY!,
+            name: projectName,
+            ownerId: userId,
+        });
+
+        // 3. Create Files
+        for (const file of files) {
+            let storageId: Id<"_storage"> | undefined;
+
+            if (file.isBinary && Buffer.isBuffer(file.content)) {
+                // Upload binary content to Storage
+                const uploadUrl = await fetchMutation(api.system.generateUploadUrl, {
+                    internalKey: process.env.POLARIS_CONVEX_INTERNAL_KEY!,
+                });
+
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/octet-stream" }, // Or detect mime type
+                    // Buffer is a valid BodyInit at runtime; types are slightly off.
+                    body: file.content as unknown as BodyInit,
+                });
+
+                if (!uploadResponse.ok) {
+                    console.error(`Failed to upload ${file.path}`);
+                    continue;
+                }
+
+                const { storageId: sid } = await uploadResponse.json();
+                storageId = sid;
+            }
+
+            await fetchMutation(api.system.createFileInternal, {
+                internalKey: process.env.POLARIS_CONVEX_INTERNAL_KEY!,
+                projectId,
+                name: file.path.startsWith("/") ? file.path.slice(1) : file.path, // Remove leading slash if present
+                content: typeof file.content === "string" ? file.content : undefined,
+                storageId,
+            });
+        }
+
+        return Response.json({ projectId });
+    } catch (error) {
+        console.error("Import error:", error);
+        return new Response(
+            error instanceof Error ? error.message : "Internal Server Error",
+            { status: 500 }
+        );
+    }
+}

@@ -179,6 +179,84 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_owner_month", ["ownerId", "yearMonth"]),
 
+  // ── Sandbox lifecycle (sub-plan 02) ──────────────────────────────────────
+  // One row per project. Tracks the cached E2B sandbox so the lifecycle can
+  // decide reuse-vs-reprovision on every project open. Authority: sub-plan 02
+  // §7 (adapted: separate table keeps `projects` clean for the editor query).
+  sandboxes: defineTable({
+    projectId: v.id("projects"),
+    /** Provider-issued sandbox id (e.g. E2B sandboxId, mock id). */
+    sandboxId: v.string(),
+    /** Last positive `isAlive` timestamp; also used as a TTL probe. */
+    alive: v.boolean(),
+    createdAt: v.number(),
+    /** Provider-side hard expiry (createdAt + timeoutMs). */
+    expiresAt: v.number(),
+    /** Set true when a sandbox-side write fails — lifecycle re-syncs on next open. */
+    needsResync: v.optional(v.boolean()),
+    /** Mutated by `touch` mutations on every successful sandbox interaction. */
+    lastAlive: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_sandbox_id", ["sandboxId"]),
+
+  // ── Billing — sub-plan 08 (additive) ───────────────────────────────────────
+  customers: defineTable({
+    /** Clerk userId — unique per user. */
+    userId: v.string(),
+    stripeCustomerId: v.optional(v.string()),
+    stripeSubscriptionId: v.optional(v.string()),
+    plan: v.union(v.literal("free"), v.literal("pro"), v.literal("team")),
+    /** Mirrors Stripe `subscription.status` plus our internal `none`. */
+    subscriptionStatus: v.union(
+      v.literal("none"),
+      v.literal("trialing"),
+      v.literal("active"),
+      v.literal("past_due"),
+      v.literal("canceled"),
+      v.literal("incomplete"),
+      v.literal("incomplete_expired"),
+      v.literal("unpaid"),
+      v.literal("paused"),
+    ),
+    /** ms-since-epoch; 0 when no subscription. */
+    currentPeriodEnd: v.number(),
+    /** Seats granted by the plan (1 for free/pro, ≥1 for team). */
+    seatsAllowed: v.number(),
+    cancelAtPeriodEnd: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_stripe_customer", ["stripeCustomerId"]),
+
+  /**
+   * Idempotency log for Stripe webhooks. We insert a row keyed by Stripe's
+   * event ID before processing; a second delivery sees the row and short-
+   * circuits. See CONSTITUTION §13.1 (replay-attack threat).
+   */
+  webhook_events: defineTable({
+    /** Stripe event id (`evt_*`). Unique. */
+    eventId: v.string(),
+    type: v.string(),
+    processedAt: v.number(),
+  }).index("by_event_id", ["eventId"]),
+
+  /**
+   * Per-day usage roll-up for the daily-cost-ceiling kill switch
+   * (CONSTITUTION §17.4). Written by the same path that increments
+   * the monthly `usage` table.
+   */
+  usage_daily: defineTable({
+    ownerId: v.string(),
+    /** "YYYY-MM-DD" UTC. */
+    day: v.string(),
+    anthropicInputTokens: v.number(),
+    anthropicOutputTokens: v.number(),
+    e2bSeconds: v.number(),
+    deployments: v.number(),
+    updatedAt: v.number(),
+  }).index("by_owner_day", ["ownerId", "day"]),
+
   specs: defineTable({
     projectId: v.id("projects"),
     features: v.array(
@@ -205,5 +283,92 @@ export default defineSchema({
       v.literal("praxiom"),
     ),
     praxiomDocumentId: v.optional(v.string()),
+  }).index("by_project", ["projectId"]),
+
+  // ── Sub-plan 06 (GitHub integration) ─────────────────────────────────────
+  /**
+   * Per-user OAuth tokens encrypted at rest. Authority: CONSTITUTION §11.2,
+   * §13.2, §13.3, sub-plan 06 Task 3. Tokens are AES-256-GCM-packed strings
+   * stored in `*Enc` fields — they are never logged, never returned to the
+   * client, only decrypted server-side just-in-time.
+   */
+  integrations: defineTable({
+    /** Clerk userId. One row per (user, provider). */
+    userId: v.string(),
+    provider: v.literal("github"),
+    /** GitHub login (e.g. "octocat"); shown in UI. */
+    accountLogin: v.string(),
+    /** GitHub numeric account id (stable across renames). */
+    accountId: v.string(),
+    /** Encrypted access token. Format: iv:tag:ct (base64 segments). */
+    accessTokenEnc: v.string(),
+    /** Optional encrypted refresh token (PAT GitHub doesn't issue these). */
+    refreshTokenEnc: v.optional(v.string()),
+    /** Granted scopes — for UX ("re-connect to push private repos"). */
+    scopes: v.array(v.string()),
+    /** ms-since-epoch; 0 if non-expiring. */
+    expiresAt: v.number(),
+    connectedAt: v.number(),
+    /** Last time we used this token successfully (for stale-token UI). */
+    lastUsedAt: v.optional(v.number()),
+  })
+    .index("by_user_provider", ["userId", "provider"])
+    .index("by_account", ["provider", "accountId"]),
+
+  /**
+   * Waitlist for non-allowlisted Clerk signups (sub-plan 10 Task 1/3).
+   */
+  waitlist: defineTable({
+    email: v.string(),
+    referrer: v.optional(v.string()),
+    requestedAt: v.number(),
+    /** "pending" | "invited" | "rejected". */
+    status: v.union(v.literal("pending"), v.literal("invited"), v.literal("rejected")),
+    invitedAt: v.optional(v.number()),
+    notes: v.optional(v.string()),
+  }).index("by_email", ["email"]).index("by_status", ["status"]),
+
+  /**
+   * Onboarding state per user (sub-plan 10 Task 1).
+   */
+  user_profiles: defineTable({
+    userId: v.string(),
+    onboardingCompleted: v.boolean(),
+    /** Step the user is on. Steps: "welcome", "starter", "tour", "done". */
+    onboardingStep: v.string(),
+    /** Marketing opt-in collected at signup. */
+    marketingOptIn: v.optional(v.boolean()),
+    /** Cookie consent flags. */
+    cookieConsent: v.optional(
+      v.object({
+        analytics: v.boolean(),
+        marketing: v.boolean(),
+        timestamp: v.number(),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // ── Sub-plan 07 (deploy pipeline) ────────────────────────────────────────
+  deployments: defineTable({
+    projectId: v.id("projects"),
+    userId: v.string(),
+    status: v.union(
+      v.literal("provisioning_db"),
+      v.literal("running_migrations"),
+      v.literal("env_capture"),
+      v.literal("deploying"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+    ),
+    /** Human-readable name of the current step (e.g. "Wait for Supabase"). */
+    currentStep: v.string(),
+    vercelDeploymentId: v.optional(v.string()),
+    supabaseProjectRef: v.optional(v.string()),
+    liveUrl: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
   }).index("by_project", ["projectId"]),
 })

@@ -97,49 +97,53 @@ export class ClaudeAdapter implements ModelAdapter {
 
     try {
       for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
-        switch (event.type) {
+        // The Anthropic SDK's stream event types are duck-typed unions; cast
+        // through `any` for ergonomic discrimination by `event.type`.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ev = event as any
+        switch (ev.type) {
           case "message_start":
-            inputTokens = event.message?.usage?.input_tokens ?? 0
+            inputTokens = ev.message?.usage?.input_tokens ?? 0
             break
 
           case "content_block_start":
-            if (event.content_block?.type === "tool_use") {
-              toolBlocks.set(event.index, {
-                id: event.content_block.id,
-                name: event.content_block.name,
+            if (ev.content_block?.type === "tool_use") {
+              toolBlocks.set(ev.index, {
+                id: ev.content_block.id,
+                name: ev.content_block.name,
                 jsonAcc: "",
               })
             }
             break
 
           case "content_block_delta":
-            if (event.delta?.type === "text_delta") {
-              yield { type: "text_delta", delta: event.delta.text }
-            } else if (event.delta?.type === "input_json_delta") {
-              const block = toolBlocks.get(event.index)
-              if (block) block.jsonAcc += event.delta.partial_json
+            if (ev.delta?.type === "text_delta") {
+              yield { type: "text_delta", delta: ev.delta.text }
+            } else if (ev.delta?.type === "input_json_delta") {
+              const block = toolBlocks.get(ev.index)
+              if (block) block.jsonAcc += ev.delta.partial_json
             }
             break
 
           case "content_block_stop": {
-            const block = toolBlocks.get(event.index)
+            const block = toolBlocks.get(ev.index)
             if (block) {
               const input = parseToolInput(block.jsonAcc)
               yield {
                 type: "tool_call",
                 toolCall: { id: block.id, name: block.name, input },
               }
-              toolBlocks.delete(event.index)
+              toolBlocks.delete(ev.index)
             }
             break
           }
 
           case "message_delta":
-            if (typeof event.usage?.output_tokens === "number") {
-              outputTokens += event.usage.output_tokens
+            if (typeof ev.usage?.output_tokens === "number") {
+              outputTokens += ev.usage.output_tokens
             }
-            if (event.delta?.stop_reason) {
-              stopReason = normalizeStopReason(event.delta.stop_reason)
+            if (ev.delta?.stop_reason) {
+              stopReason = normalizeStopReason(ev.delta.stop_reason)
             }
             break
 

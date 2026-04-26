@@ -13,7 +13,7 @@ import {
     FileOperation,
     ConversationMessage,
     ToolCallEvent
-} from "./types";
+} from "./legacy-types";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
 
 const anthropic = new Anthropic();

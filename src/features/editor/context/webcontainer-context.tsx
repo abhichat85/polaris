@@ -61,8 +61,9 @@ export const WebContainerProvider = ({
                 const instance = await WebContainer.boot();
                 bootedRef.current = true;
 
-                const fileMap = new Map<string, typeof files>();
-                const filesByParent = new Map<string | undefined, typeof files>();
+                type WCFile = NonNullable<typeof files>[number];
+                const fileMap = new Map<string, WCFile>();
+                const filesByParent = new Map<string | undefined, WCFile[]>();
 
                 for (const file of files) {
                     fileMap.set(file._id, file);

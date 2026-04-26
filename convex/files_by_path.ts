@@ -15,16 +15,22 @@ function normalize(path: string): string {
   return path.startsWith("/") ? path.slice(1) : path
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyCtx = { db: any }
+
 async function findByPath(
-  ctx: { db: { query: (...a: unknown[]) => unknown } },
+  ctx: AnyCtx,
   projectId: Id<"projects">,
   path: string,
 ): Promise<Doc<"files"> | null> {
   const p = normalize(path)
   // Indexed lookup first.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const indexed = (await (ctx.db as never as ReturnType<typeof getDb>)
     .query("files")
-    .withIndex("by_project_path", (q) => q.eq("projectId", projectId).eq("path", p))
+    .withIndex("by_project_path", (q: any) =>
+      q.eq("projectId", projectId).eq("path", p),
+    )
     .first()) as Doc<"files"> | null
   if (indexed) return indexed
 
@@ -62,7 +68,10 @@ async function walkTree(
   for (const seg of segments) {
     const matches = (await db
       .query("files")
-      .withIndex("by_project_parent", (q) => q.eq("projectId", projectId).eq("parentId", parentId))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .withIndex("by_project_parent", (q: any) =>
+        q.eq("projectId", projectId).eq("parentId", parentId),
+      )
       .collect()) as Doc<"files">[]
     cur = matches.find((m) => m.name === seg) ?? null
     if (!cur) return null
@@ -241,5 +250,32 @@ export const listPath = query({
       }
     }
     return { files, folders: Array.from(folders) }
+  },
+})
+
+/**
+ * Returns every file in a project as { path, content } pairs.
+ * Used by the GitHub push pipeline to build the commit tree.
+ * Authority: sub-plan 06 Task 11.
+ */
+export const listAllWithContent = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const db = getDb(ctx)
+    const all = (await db
+      .query("files")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect()) as Doc<"files">[]
+
+    const out: { path: string; content: string }[] = []
+    for (const f of all) {
+      if (f.type !== "file") continue
+      const path = f.path
+      if (!path) continue
+      if (typeof f.content !== "string") continue
+      out.push({ path, content: f.content })
+    }
+    return out
   },
 })

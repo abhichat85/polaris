@@ -128,3 +128,49 @@ export const updateExportStatus = mutation({
     });
   },
 });
+// ── Internal-key-gated mutations for Inngest GitHub workflows ───────────────
+// Authority: sub-plan 06 Task 11.
+
+const validateGithubInternalKey = (key: string) => {
+  const internalKey = process.env.POLARIS_CONVEX_INTERNAL_KEY;
+  if (!internalKey) throw new Error("POLARIS_CONVEX_INTERNAL_KEY is not configured");
+  if (key !== internalKey) throw new Error("invalid_internal_key");
+};
+
+export const setImportStatusInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    id: v.id("projects"),
+    status: v.union(
+      v.literal("importing"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    validateGithubInternalKey(args.internalKey);
+    await ctx.db.patch(args.id, { importStatus: args.status });
+  },
+});
+
+export const setExportStatusInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    id: v.id("projects"),
+    status: v.union(
+      v.literal("exporting"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    exportRepoUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    validateGithubInternalKey(args.internalKey);
+    const patch: { exportStatus: typeof args.status; exportRepoUrl?: string } = {
+      exportStatus: args.status,
+    };
+    if (args.exportRepoUrl) patch.exportRepoUrl = args.exportRepoUrl;
+    await ctx.db.patch(args.id, patch);
+  },
+});
