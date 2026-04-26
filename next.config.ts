@@ -12,16 +12,26 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Apply cross-origin isolation to the project IDE pages.
+        // `credentialless` COEP allows third-party assets without CORP headers
+        // (unlike `require-corp`) while still enabling SharedArrayBuffer.
         source: "/projects/:path*",
         headers: [
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          { key: "Cross-Origin-Embedder-Policy", value: "credentialless" },
         ],
       },
-      // The WebContainer iframe assets are served from the same origin;
-      // static Next.js assets loaded inside the project view also need CORP.
       {
+        // All Next.js static chunks must be cross-origin readable when the
+        // project page enforces COEP — otherwise the browser blocks them.
         source: "/_next/:path*",
+        headers: [
+          { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
+        ],
+      },
+      {
+        // API routes called from the cross-origin-isolated project page.
+        source: "/api/:path*",
         headers: [
           { key: "Cross-Origin-Resource-Policy", value: "cross-origin" },
         ],
