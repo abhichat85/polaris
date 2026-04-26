@@ -5,12 +5,8 @@ const reorder = vi.fn().mockResolvedValue(undefined)
 const upsert = vi.fn().mockResolvedValue(undefined)
 
 vi.mock("convex/react", () => ({
-  useMutation: (ref: unknown) => {
-    // Distinguish by reference name in api object — both used in component.
-    const s = String(ref)
-    if (s.includes("reorderCriteria")) return reorder
-    return upsert
-  },
+  // Component only uses `useMutation(api.specs.reorderCriteria)` — return `reorder` for any ref.
+  useMutation: () => reorder,
   useQuery: () => undefined,
 }))
 

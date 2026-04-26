@@ -15,8 +15,11 @@ function normalize(path: string): string {
   return path.startsWith("/") ? path.slice(1) : path
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyCtx = { db: any }
+
 async function findByPath(
-  ctx: { db: { query: (...a: unknown[]) => unknown } },
+  ctx: AnyCtx,
   projectId: Id<"projects">,
   path: string,
 ): Promise<Doc<"files"> | null> {

@@ -11,8 +11,7 @@ const fetchMock = vi.fn()
 
 beforeEach(() => {
   fetchMock.mockReset()
-  // @ts-expect-error - assign global fetch for test
-  global.fetch = fetchMock
+  global.fetch = fetchMock as unknown as typeof fetch
 })
 
 describe("CancelButton", () => {

@@ -29,8 +29,9 @@ describe("FeatureCard", () => {
     render(<FeatureCard feature={baseFeature} projectId={"p1" as never} />)
     fireEvent.click(screen.getByRole("button", { name: /expand|user can sign in/i }))
     expect(screen.getByText("Email + password login.")).toBeInTheDocument()
-    expect(screen.getByText("Login form renders")).toBeInTheDocument()
-    expect(screen.getByText("Successful login redirects")).toBeInTheDocument()
+    // Criteria render as editable input values inside AcceptanceCriteriaEditor.
+    expect(screen.getByDisplayValue("Login form renders")).toBeInTheDocument()
+    expect(screen.getByDisplayValue("Successful login redirects")).toBeInTheDocument()
   })
 
   it.each([
