@@ -141,10 +141,17 @@ export const ConversationSidebar = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-sidebar">
-      <div className="h-8.75 flex items-center justify-between border-b">
-        <div className="text-sm truncate pl-3">
-          {activeConversation?.title ?? DEFAULT_CONVERSATION_TITLE}
+    // Praxiom — agent panel sits on surface-1, header borderless (surface contrast only)
+    <div className="flex flex-col h-full bg-surface-1">
+      <div className="h-10 flex items-center justify-between px-3 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 shrink-0">
+            Agent
+          </span>
+          <span className="text-surface-4">·</span>
+          <div className="text-sm font-medium text-foreground truncate">
+            {activeConversation?.title ?? DEFAULT_CONVERSATION_TITLE}
+          </div>
         </div>
         <div className="flex items-center px-1 gap-1">
           <Button

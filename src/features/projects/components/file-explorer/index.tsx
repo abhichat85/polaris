@@ -55,20 +55,26 @@ export const FileExplorer = ({
   };
 
   return (
-    <div className="h-full bg-sidebar">
-      <ScrollArea>
+    // Praxiom — file pane sits one level lighter than editor canvas (surface-1 vs surface-0)
+    <div className="h-full bg-surface-1 flex flex-col">
+      <div className="px-2 pt-2.5 pb-1 shrink-0">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+          Explorer
+        </span>
+      </div>
+      <ScrollArea className="flex-1">
         <div
           role="button"
           onClick={() => setIsOpen((value) => !value)}
-          className="group/project cursor-pointer w-full text-left flex items-center gap-0.5 h-5.5 bg-accent font-bold"
+          className="group/project cursor-pointer w-full text-left flex items-center gap-0.5 h-7 px-1.5 hover:bg-surface-2 transition-colors"
         >
           <ChevronRightIcon
             className={cn(
-              "size-4 shrink-0 text-muted-foreground",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
               isOpen && "rotate-90"
             )}
           />
-          <p className="text-xs uppercase line-clamp-1">
+          <p className="text-xs font-semibold tracking-wide uppercase line-clamp-1 text-foreground">
             {project?.name ?? "Loading..."}
           </p>
           <div className="opacity-0 group-hover/project:opacity-100 transition-none duration-0 flex items-center gap-0.5 ml-auto">
