@@ -200,6 +200,63 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_sandbox_id", ["sandboxId"]),
 
+  // ── Billing — sub-plan 08 (additive) ───────────────────────────────────────
+  customers: defineTable({
+    /** Clerk userId — unique per user. */
+    userId: v.string(),
+    stripeCustomerId: v.optional(v.string()),
+    stripeSubscriptionId: v.optional(v.string()),
+    plan: v.union(v.literal("free"), v.literal("pro"), v.literal("team")),
+    /** Mirrors Stripe `subscription.status` plus our internal `none`. */
+    subscriptionStatus: v.union(
+      v.literal("none"),
+      v.literal("trialing"),
+      v.literal("active"),
+      v.literal("past_due"),
+      v.literal("canceled"),
+      v.literal("incomplete"),
+      v.literal("incomplete_expired"),
+      v.literal("unpaid"),
+      v.literal("paused"),
+    ),
+    /** ms-since-epoch; 0 when no subscription. */
+    currentPeriodEnd: v.number(),
+    /** Seats granted by the plan (1 for free/pro, ≥1 for team). */
+    seatsAllowed: v.number(),
+    cancelAtPeriodEnd: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_stripe_customer", ["stripeCustomerId"]),
+
+  /**
+   * Idempotency log for Stripe webhooks. We insert a row keyed by Stripe's
+   * event ID before processing; a second delivery sees the row and short-
+   * circuits. See CONSTITUTION §13.1 (replay-attack threat).
+   */
+  webhook_events: defineTable({
+    /** Stripe event id (`evt_*`). Unique. */
+    eventId: v.string(),
+    type: v.string(),
+    processedAt: v.number(),
+  }).index("by_event_id", ["eventId"]),
+
+  /**
+   * Per-day usage roll-up for the daily-cost-ceiling kill switch
+   * (CONSTITUTION §17.4). Written by the same path that increments
+   * the monthly `usage` table.
+   */
+  usage_daily: defineTable({
+    ownerId: v.string(),
+    /** "YYYY-MM-DD" UTC. */
+    day: v.string(),
+    anthropicInputTokens: v.number(),
+    anthropicOutputTokens: v.number(),
+    e2bSeconds: v.number(),
+    deployments: v.number(),
+    updatedAt: v.number(),
+  }).index("by_owner_day", ["ownerId", "day"]),
+
   specs: defineTable({
     projectId: v.id("projects"),
     features: v.array(
