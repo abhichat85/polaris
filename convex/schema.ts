@@ -179,6 +179,27 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_owner_month", ["ownerId", "yearMonth"]),
 
+  // ── Sandbox lifecycle (sub-plan 02) ──────────────────────────────────────
+  // One row per project. Tracks the cached E2B sandbox so the lifecycle can
+  // decide reuse-vs-reprovision on every project open. Authority: sub-plan 02
+  // §7 (adapted: separate table keeps `projects` clean for the editor query).
+  sandboxes: defineTable({
+    projectId: v.id("projects"),
+    /** Provider-issued sandbox id (e.g. E2B sandboxId, mock id). */
+    sandboxId: v.string(),
+    /** Last positive `isAlive` timestamp; also used as a TTL probe. */
+    alive: v.boolean(),
+    createdAt: v.number(),
+    /** Provider-side hard expiry (createdAt + timeoutMs). */
+    expiresAt: v.number(),
+    /** Set true when a sandbox-side write fails — lifecycle re-syncs on next open. */
+    needsResync: v.optional(v.boolean()),
+    /** Mutated by `touch` mutations on every successful sandbox interaction. */
+    lastAlive: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_sandbox_id", ["sandboxId"]),
+
   specs: defineTable({
     projectId: v.id("projects"),
     features: v.array(
