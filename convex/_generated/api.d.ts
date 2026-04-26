@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as constants from "../constants.js";
 import type * as conversations from "../conversations.js";
+import type * as deployments from "../deployments.js";
 import type * as files from "../files.js";
 import type * as projects from "../projects.js";
 import type * as system from "../system.js";
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   constants: typeof constants;
   conversations: typeof conversations;
+  deployments: typeof deployments;
   files: typeof files;
   projects: typeof projects;
   system: typeof system;
