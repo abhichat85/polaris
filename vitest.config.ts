@@ -22,7 +22,7 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
-          include: ["tests/unit/**/*.test.ts"],
+          include: ["tests/unit/**/*.test.ts", "tests/eval/**/*.test.ts"],
           exclude: ["**/*.test.tsx", "node_modules", ".next", "dist"],
         },
       },

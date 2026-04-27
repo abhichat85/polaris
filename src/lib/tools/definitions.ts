@@ -118,17 +118,35 @@ export const AGENT_TOOLS: ToolDefinition[] = [
 ]
 
 /**
- * Patterns the executor refuses to run. Authority: §8.4 run_command.
+ * Patterns the executor refuses to run. Authority: §8.4 run_command,
+ * §13 security policy.
  *
- * `npm run dev` is forbidden because the sandbox already has the dev server
- * running on the preview port; a second run would deadlock the model on
- * watching output that never ends.
+ * `npm run dev` (and pnpm/yarn/bun equivalents) is forbidden because the
+ * sandbox already runs the dev server on the preview port — a second
+ * invocation would deadlock the model on output that never ends.
+ *
+ * Caught by the eval suite (curl|bash regression):
+ *   - `curl ... | sh`     → was caught
+ *   - `curl ... | bash`   → was NOT caught — fixed below
+ *   - `curl ... | zsh`    → covered by widened pattern
+ *   - `wget -O- ... | sh` → also covered
  */
 export const FORBIDDEN_COMMAND_PATTERNS: RegExp[] = [
-  /\bsudo\b/,
-  /\brm\s+-rf\s+\//,
-  /\bnpm\s+run\s+dev\b/,
-  /\bcurl\s+[^|]*\|\s*sh\b/, // curl-pipe-sh
+  /\bsudo\b/i,
+  /\brm\s+-rf\s+\//i,
+  /\b(npm|pnpm|yarn|bun)\s+(run\s+)?dev\b/i,
+  // curl/wget piped to any common shell. Matches: `curl <args> | bash`,
+  // `curl ... | zsh -c ...`, `wget -O- ... | sh`, etc.
+  /\b(curl|wget)\s[^|]*\|\s*(sh|bash|zsh|dash|ksh|fish)\b/i,
+  // Pushing to remote git, publishing packages — these escape the sandbox.
+  /\bgit\s+push\b/i,
+  /\bnpm\s+publish\b/i,
+  /\bpnpm\s+publish\b/i,
+  /\byarn\s+publish\b/i,
+  // Disk writes outside the sandbox root.
+  /\bdd\b[^\n]*\bof\s*=\s*\/dev/i,
+  // Fork bombs.
+  /:\(\)\{\s*:\|:\s*&\s*\};\s*:/,
 ]
 
 export function getToolDefinition(name: string): ToolDefinition | undefined {
