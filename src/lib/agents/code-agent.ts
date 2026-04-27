@@ -186,6 +186,31 @@ const tools: Anthropic.Tool[] = [
             required: ["command"],
         },
     },
+    {
+        // D-026 — 9th tool. The Generator agent calls this as it ships each
+        // plan feature so the user (and the Evaluator, in Phase 3) can see
+        // progress. The plan markdown at /docs/plan.md is also kept in sync
+        // by the Convex mutation (it patches both planMarkdown and the
+        // structured features array atomically).
+        name: "set_feature_status",
+        description:
+            "Mark a plan feature as in_progress, done, or blocked. Use this AS YOU SHIP each feature so the user can track progress in real time. featureId is the kebab-case id from /docs/plan.md (e.g. 'auth-clerk', 'product-list'). Mark in_progress when you start, done when acceptance criteria pass, blocked when external dependency is missing.",
+        input_schema: {
+            type: "object" as const,
+            properties: {
+                featureId: {
+                    type: "string",
+                    description: "Plan feature id (kebab-case, from /docs/plan.md).",
+                },
+                status: {
+                    type: "string",
+                    enum: ["todo", "in_progress", "done", "blocked"],
+                    description: "New status.",
+                },
+            },
+            required: ["featureId", "status"],
+        },
+    },
 ];
 
 interface ToolInput {
@@ -198,6 +223,8 @@ interface ToolInput {
     command?: string;
     cwd?: string;
     timeoutMs?: number;
+    featureId?: string;
+    status?: "todo" | "in_progress" | "done" | "blocked";
 }
 
 /**
@@ -500,6 +527,35 @@ async function executeToolCall(
             } catch (err) {
                 const msg = err instanceof Error ? err.message : "unknown";
                 return { result: { error: `COMMAND_FAILED: ${msg}` } };
+            }
+        }
+
+        case "set_feature_status": {
+            const featureId = toolInput.featureId!;
+            const status = toolInput.status!;
+            try {
+                const r = await convex.mutation(api.specs.setFeatureStatus, {
+                    internalKey,
+                    projectId,
+                    featureId,
+                    status,
+                });
+                if (!r?.ok) {
+                    return {
+                        result: {
+                            error: `FEATURE_NOT_FOUND: '${featureId}' is not in the plan. Re-read /docs/plan.md to confirm the id.`,
+                        },
+                    };
+                }
+                return {
+                    result: {
+                        success: true,
+                        message: `Marked '${featureId}' as ${status}.`,
+                    },
+                };
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : "unknown";
+                return { result: { error: `STATUS_UPDATE_FAILED: ${msg}` } };
             }
         }
 
