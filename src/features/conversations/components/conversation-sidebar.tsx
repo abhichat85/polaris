@@ -1,4 +1,4 @@
-import ky from "ky";
+import { polarisKy as ky } from "@/lib/http/polaris-ky";
 import { toast } from "sonner";
 
 import { showQuotaBlocked } from "@/components/quota-blocked-toast";
