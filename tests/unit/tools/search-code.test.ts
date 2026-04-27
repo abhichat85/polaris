@@ -1,18 +1,17 @@
 import { describe, it, expect, vi } from "vitest"
 import { searchCode } from "@/lib/tools/search-code"
 
-type ExecMock = ReturnType<typeof vi.fn>
+type ExecFn = (
+  cmd: string,
+  opts?: { cwd?: string; timeoutMs?: number },
+) => Promise<{ exitCode: number; stdout: string; stderr: string }>
 
-function makeDeps(execImpl: (cmd: string, opts?: { cwd?: string; timeoutMs?: number }) => Promise<{
-  exitCode: number
-  stdout: string
-  stderr: string
-}>) {
-  const exec: ExecMock = vi.fn(execImpl)
+function makeDeps(execImpl: ExecFn) {
+  const exec = vi.fn<ExecFn>(execImpl)
   return {
     exec,
     deps: {
-      exec: (cmd: string, opts?: { cwd?: string; timeoutMs?: number }) => exec(cmd, opts),
+      exec: ((cmd, opts) => exec(cmd, opts)) as ExecFn,
       projectRoot: "/workspace",
     },
   }

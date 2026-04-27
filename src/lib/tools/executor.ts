@@ -69,7 +69,7 @@ export class ToolExecutor {
         case "run_command":
           return await this.runCommand(toolCall.input as RunInput, ctx)
         case "search_code":
-          return await this.searchCode(toolCall.input as SearchCodeArgs, ctx)
+          return await this.searchCode(toolCall.input as unknown as SearchCodeArgs, ctx)
         default:
           return {
             ok: false,
