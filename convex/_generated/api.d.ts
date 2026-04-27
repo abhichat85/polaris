@@ -22,6 +22,7 @@ import type * as integrations from "../integrations.js";
 import type * as migrations_create_personal_workspaces from "../migrations/create_personal_workspaces.js";
 import type * as plans from "../plans.js";
 import type * as projects from "../projects.js";
+import type * as sandboxes from "../sandboxes.js";
 import type * as specs from "../specs.js";
 import type * as system from "../system.js";
 import type * as usage from "../usage.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/create_personal_workspaces": typeof migrations_create_personal_workspaces;
   plans: typeof plans;
   projects: typeof projects;
+  sandboxes: typeof sandboxes;
   specs: typeof specs;
   system: typeof system;
   usage: typeof usage;

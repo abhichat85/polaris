@@ -67,7 +67,22 @@ export async function POST(request: Request) {
 
   const projectId = conversation.projectId;
 
-  // TODO: Check for processing messages
+  // Constitution §10 — only one in-flight message per conversation. The
+  // client is expected to call /api/messages/cancel before re-submitting.
+  const inFlight = await convex.query(
+    api.system.getProcessingMessageInConversation,
+    { internalKey, conversationId: conversationId as Id<"conversations"> },
+  );
+  if (inFlight) {
+    return NextResponse.json(
+      {
+        error: "in_flight",
+        messageId: inFlight._id,
+        hint: "Cancel the in-flight message via /api/messages/cancel before sending a new one.",
+      },
+      { status: 409 },
+    );
+  }
 
   // Create user message
   await convex.mutation(api.system.createMessage, {

@@ -52,6 +52,17 @@ function getProvider(): SandboxProvider {
 }
 
 /**
+ * Named export of the singleton — the ergonomic shape for non-Proxy callers.
+ * Authority: D-018. Use this in Inngest functions and API routes:
+ *
+ *   const sandbox = getSandboxProvider();
+ *   const handle = await sandbox.create("nextjs", { timeoutMs });
+ */
+export function getSandboxProvider(): SandboxProvider {
+  return getProvider()
+}
+
+/**
  * The single sandbox provider used by the entire codebase.
  * Lazy: only the first read constructs it, so unit tests that don't touch
  * sandbox don't need any env at all.

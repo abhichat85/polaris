@@ -27,9 +27,15 @@ import { AgentRunner } from "@/lib/agents/agent-runner"
 import { ConvexAgentSink } from "@/lib/agents/convex-sink"
 import { ConvexFileService } from "@/lib/files/convex-file-service"
 import { getAdapter } from "@/lib/agents/registry"
-import { MockSandboxProvider } from "@/lib/sandbox/mock-provider"
+import {
+  getSandboxProvider,
+  SandboxDeadError,
+} from "@/lib/sandbox"
 import { ToolExecutor } from "@/lib/tools/executor"
 import { api } from "../../../../convex/_generated/api"
+import type { Id } from "../../../../convex/_generated/dataModel"
+
+const SANDBOX_TTL_MS = 24 * 60 * 60 * 1000
 
 interface AgentRunEvent {
   messageId: string
@@ -78,28 +84,74 @@ export const agentLoop = inngest.createFunction(
       )
     }
 
-    // Sub-plan 02 will swap this for the real E2BSandboxProvider singleton.
-    // Until then, scaffolds and edits run against an in-memory mock so the
-    // pipeline is exercised end-to-end without an E2B account.
-    const sandbox = new MockSandboxProvider()
+    // D-018 — sandbox provider singleton. Selection is env-driven inside
+    // `getSandboxProvider()` (mock when no E2B_API_KEY, else E2B).
+    const sandbox = getSandboxProvider()
+
+    // Resolve the per-project sandbox: reuse if alive + within TTL,
+    // otherwise provision and persist.
+    const projectId = data.projectId as Id<"projects">
+    const ensureSandbox = async (): Promise<string> => {
+      const existing = await convex.query(api.sandboxes.getByProject, {
+        internalKey,
+        projectId,
+      })
+      const now = Date.now()
+      if (existing && existing.alive && existing.expiresAt > now) {
+        return existing.sandboxId
+      }
+      const handle = await sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS })
+      await convex.mutation(api.sandboxes.setForProject, {
+        internalKey,
+        projectId,
+        sandboxId: handle.id,
+        expiresAt: now + SANDBOX_TTL_MS,
+      })
+      return handle.id
+    }
+
+    let sandboxId = await ensureSandbox()
 
     const sink = new ConvexAgentSink({ convex, internalKey })
     const files = new ConvexFileService({ convex })
     const executor = new ToolExecutor({ files, sandbox })
     const adapter = getAdapter("claude")
-    const runner = new AgentRunner({
-      adapter,
-      executor,
-      sink,
-      sandboxId: data.sandboxId ?? null,
-    })
 
-    await runner.run({
-      messageId: data.messageId,
-      conversationId: data.conversationId,
-      projectId: data.projectId,
-      userId: data.userId,
-      resumeFromCheckpoint: attempt > 0, // Layer 3 of error recovery
-    })
+    // Single-retry loop on SandboxDeadError. After one reprovision, escalate.
+    let attempts = 0
+    while (true) {
+      const runner = new AgentRunner({
+        adapter,
+        executor,
+        sink,
+        sandboxId,
+      })
+      try {
+        await runner.run({
+          messageId: data.messageId,
+          conversationId: data.conversationId,
+          projectId: data.projectId,
+          userId: data.userId,
+          resumeFromCheckpoint: attempt > 0 || attempts > 0, // Layer 3
+        })
+        return
+      } catch (err) {
+        if (err instanceof SandboxDeadError && attempts === 0) {
+          attempts += 1
+          await convex.mutation(api.sandboxes.markDead, {
+            internalKey,
+            sandboxId,
+          })
+          sandboxId = await ensureSandbox()
+          continue
+        }
+        if (err instanceof SandboxDeadError) {
+          throw new NonRetriableError(
+            "Sandbox died twice in one run; aborting to avoid retry storm.",
+          )
+        }
+        throw err
+      }
+    }
   },
 )

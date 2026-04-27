@@ -535,3 +535,68 @@ export const createProjectInternal = mutation({
     return projectId;
   },
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 9 — In-flight message guard. Returns the processing message in a
+// conversation, if any, so /api/messages can refuse to enqueue a second one.
+// ─────────────────────────────────────────────────────────────────────────────
+export const getProcessingMessageInConversation = query({
+  args: {
+    internalKey: v.string(),
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey);
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId),
+      )
+      .collect();
+    return (
+      messages.find(
+        (m) => m.status === "processing" || m.status === "streaming",
+      ) ?? null
+    );
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1.5 — Live tool stream append. The `run_command` agent tool calls
+// this per-line so the chat UI shows stdout/stderr as it arrives. Bounded
+// at 4 KB total per call to keep individual messages from blowing up.
+// Authority: D-018.
+// ─────────────────────────────────────────────────────────────────────────────
+export const appendToolStream = mutation({
+  args: {
+    internalKey: v.string(),
+    messageId: v.id("messages"),
+    toolUseId: v.string(),
+    kind: v.union(v.literal("stdout"), v.literal("stderr")),
+    line: v.string(),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey);
+    const message = await ctx.db.get(args.messageId);
+    if (!message) return; // missing → no-op (don't throw; agent retries are normal)
+
+    const toolCalls = message.toolCalls ?? [];
+    const idx = toolCalls.findIndex((tc) => tc.id === args.toolUseId);
+    if (idx === -1) return; // toolUseId not found yet → no-op
+
+    const tc = toolCalls[idx];
+    // Cast through the v.any() escape hatch — `stream` is part of the
+    // schema validator on the toolCall element; TS just doesn't know yet.
+    const existing = ((tc as unknown as { stream?: Array<{ kind: string; line: string; at: number }> }).stream) ?? [];
+    const totalSize = existing.reduce((s, e) => s + e.line.length, 0);
+    if (totalSize >= 4096) return; // cap reached
+
+    const next = [
+      ...existing,
+      { kind: args.kind, line: args.line, at: Date.now() },
+    ];
+
+    const nextToolCalls = [...toolCalls];
+    nextToolCalls[idx] = { ...tc, stream: next } as typeof tc;
+    await ctx.db.patch(args.messageId, { toolCalls: nextToolCalls });
+  },
+});

@@ -2397,6 +2397,107 @@ Every architectural decision, its alternatives, and why we chose what we chose. 
 
 ---
 
+### D-018: Per-project Sandbox Lifecycle (locked 2026-04-27)
+
+**Question:** Where does the agent's E2B sandbox live, who manages its lifecycle, and what happens when it dies mid-run?
+
+**Alternatives:**
+1. One sandbox per agent run (boot fresh on every message) — simplest, but ~5–8s cold-start tax on every turn and loses warm-cache state (`node_modules`, build artifacts).
+2. One sandbox per session (cookie-scoped) — fast across a single chat, but breaks when the user closes the browser and the next session reboots from scratch.
+3. **One sandbox per project, persisted in `sandboxes` table, reprovisioned only on death.**
+
+**Decision:** Option 3. The `sandboxes` Convex table tracks `(projectId, sandboxId, alive, createdAt, expiresAt, lastAlive, needsResync)`. The agent loop fetches the row before each run; reuses if `alive && expiresAt > now`; otherwise calls `getSandboxProvider().create()` and persists via `setForProject`. Provider selection is env-driven via `SANDBOX_PROVIDER=e2b|mock` (defaults to `mock` when no `E2B_API_KEY` is set). On `SandboxDeadError` mid-run, the loop calls `markDead`, creates a new sandbox, and retries from the saved checkpoint exactly once before escalating to `NonRetriableError`.
+
+**Rationale:**
+- Warm-cache wins compound: subsequent runs avoid `npm install`, dependency resolution, and TypeScript bootstrap.
+- E2B's 24-hour TTL aligns with one project ≈ one sandbox; no orphan-collection logic needed beyond the existing `expiresAt` field.
+- Pinning the provider behind `getSandboxProvider()` keeps tests reading `MockSandboxProvider` while production reads E2B — single switch, single source of truth.
+- Restricting the retry loop to **one** reprovision attempt prevents unbounded retry storms when E2B itself is degraded.
+
+**Reconsideration trigger:** If observed sandbox-death rate exceeds 5% of agent runs, revisit (perhaps switch to one-per-session with snapshot/restore). If users complain about stale state — e.g. `node_modules` getting corrupted between runs — add a manual "reset sandbox" affordance.
+
+---
+
+### D-019: Plans Table is Source of Truth, Seeded by Idempotent Mutation (locked 2026-04-27)
+
+**Question:** Where do tier limits live, and how are they updated?
+
+**Alternatives:**
+1. Hardcode in `convex/plans.ts` constants — fast read, but every limit change requires a redeploy and there's no audit trail.
+2. Auto-create `plans` rows on schema deploy via a `defaultsToSeed` hook — ergonomic, but couples seed numbers to schema migrations and silently changes production limits when constants change.
+3. **`plans` table populated by an idempotent `internalMutation` (`plans:seedDefaults`), invoked manually after each tier-number change.**
+
+**Decision:** Option 3. The mutation is idempotent (patches existing rows, inserts missing ones) and lives in source so its history is git-tracked. The deploy procedure is: edit `convex/plans.ts:SEED_ROWS` → push schema → run `npx convex run plans:seedDefaults`. The query layer (`assertWithinQuota`, `assertWithinQuotaInternal`) joins `customers.plan` to the matching `plans` row at request time.
+
+**Rationale:**
+- Tier-limit changes are a product decision, not an engineering migration. Decoupling them from schema deploys lets product own the dial.
+- Idempotency makes the operation safe to re-run anytime (e.g., to clean up after an aborted partial seed).
+- An explicit step is a feature, not a bug — the operator always knows when limits move.
+
+**Reconsideration trigger:** If we ever offer per-customer custom plans (enterprise), the `plans` table grows a `customerId` join and the lookup becomes a per-user resolution. The current shape supports that without a migration — just add an optional column.
+
+---
+
+### D-020: Workspaces are the Top-Level Multi-Tenancy Primitive (locked 2026-04-27)
+
+**Question:** How does Polaris model teams / shared projects, and how do we get there from the existing single-owner shape?
+
+**Alternatives:**
+1. Defer multi-tenancy until v2 — fastest, but every later feature (billing seats, RBAC, audit) accumulates as tech debt against single-owner assumptions.
+2. Add a workspace table + members + immediate `projects.workspaceId` required-FK migration — clean end-state but a stop-the-world deploy on existing data.
+3. **Two-step migration: introduce `workspaces` + `workspace_members` tables; add `projects.workspaceId` as OPTIONAL FK; backfill existing projects via `migrations/create_personal_workspaces:run`; promote to required in a follow-up commit after backfill verification.**
+
+**Decision:** Option 3. New users get a personal workspace auto-created on `user.created` Clerk webhook (`workspaces.createPersonal`). Existing users get one via the backfill mutation. Membership lives in `workspace_members` with three roles: `owner` (cannot be removed if last; full control), `admin` (manage members), `member` (project access only). Slug uniqueness is enforced at insert time, not via a DB constraint. The active workspace is a per-request cookie (`polaris_active_workspace`); switching workspaces re-renders the project list against the new scope.
+
+**Rationale:**
+- The optional-FK staging avoids any data outage; legacy projects keep working without a workspaceId until the backfill runs.
+- Personal workspaces preserve the single-owner UX for solo users — they never see the multi-tenant chrome until they invite someone.
+- Three-role RBAC is the minimum viable shape; we explicitly do **not** ship custom roles in v1.
+
+**Reconsideration trigger:** If real customer demand for nested workspaces (orgs containing workspaces) materialises, revisit. The current shape supports it via `workspaces.parentId v.optional(v.id("workspaces"))`. Likewise, if invite-by-email fails for users who haven't signed up to Clerk yet (the gating UX is awkward), consider sending Clerk invitations directly from `workspaces.invite`.
+
+---
+
+### D-021: Stripe Webhook Idempotency via `webhook_events` Table (locked 2026-04-27)
+
+**Question:** How do we guarantee that Stripe's at-least-once webhook delivery doesn't double-charge our internal state?
+
+**Alternatives:**
+1. Rely on `customers.upsertFromWebhook` being idempotent at the row level — partial; works for `customer.subscription.updated` but not for events that mutate side-state (e.g., issuing credits on `invoice.paid`).
+2. Use Stripe's recommended `event.id` deduplication via Redis with a TTL — works, but introduces a Redis dependency for a path we already serve with Convex.
+3. **A `webhook_events` table keyed on `stripe_event_id`. Check before processing; mark-processed only on successful handler completion.**
+
+**Decision:** Option 3. The route at `src/app/api/billing/webhook/route.ts` reads the raw body, verifies the signature with `STRIPE_WEBHOOK_SECRET`, queries `webhook_events.isProcessed(event.id)` — short-circuits 200 on hit. After all handler work succeeds, calls `webhook_events.markProcessed`. On any handler error, returns 500 *without* marking processed; Stripe's retry policy takes over.
+
+**Rationale:**
+- Convex provides the durability and atomicity we need at no additional infra cost.
+- Marking after success (not before) means a partial failure mid-handler causes a retry, not a silent drop.
+- Returning 400 on signature failure stops Stripe retrying a bad-signed event indefinitely.
+
+**Reconsideration trigger:** If `webhook_events` row growth becomes a cost concern (Convex bills per-row in some pricing tiers), add a TTL purge — Stripe retries terminate after 3 days, so any row older than 7 days is safe to delete.
+
+---
+
+### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
+
+**Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
+
+**Alternatives:**
+1. Make every quota-gated route also a Convex action that runs auth via `ctx.auth.getUserIdentity()` — works, but inverts control (route → action → query) and adds a hop.
+2. Pipe a Clerk session JWT through `ConvexHttpClient.setAuth(token)` — feasible for routes that already have the token, but Inngest steps don't have a user session at all.
+3. **Public Convex query gated on `POLARIS_CONVEX_INTERNAL_KEY`, accepting `userId` as an arg.**
+
+**Decision:** Option 3. `convex/plans.ts` exports `assertWithinQuota` (auth-bound — for client-side use) and `assertWithinQuotaInternal` (internalKey-gated, takes `userId` arg — for server-side callers). The pattern matches the existing `convex/system.ts` design: any function called from `/api/*` or Inngest passes the internal key; any function called from React passes through Clerk auth. The webhook idempotency module (`convex/webhook_events.ts`) follows the same pattern.
+
+**Rationale:**
+- Routes and Inngest functions already pass the internal key for their own data ops; reusing the pattern keeps a single auth boundary.
+- The internal key is server-only (never shipped to the browser); compromise requires server access, at which point the user model is already broken.
+- Avoids the complexity and latency of running a Convex action just to read a quota state.
+
+**Reconsideration trigger:** If we add a Convex Action layer for other server-side concerns (e.g. webhook fan-out), revisit whether the internal-key pattern survives or migrates to actions wholesale. Either is fine; the principle is "one auth boundary per call site."
+
+---
+
 ## Article XXI — Amendment Procedure
 
 This Constitution can be amended. The procedure:
@@ -2432,4 +2533,4 @@ It is not a finished document. It will change. Amend it deliberately. Never viol
 
 *Build Polaris correctly the first time, so we don't have to build it twice.*
 
-— Authors, 2026-04-26 (last amended 2026-04-26: D-017 added `edit_file`)
+— Authors, 2026-04-26 (last amended 2026-04-27: D-018 sandbox lifecycle, D-019 plans seeding, D-020 workspaces, D-021 Stripe webhook idempotency, D-022 assertWithinQuotaInternal pattern)

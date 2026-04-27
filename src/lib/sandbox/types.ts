@@ -39,6 +39,9 @@ export interface ExecResult {
 export interface ExecOptions {
   cwd?: string
   timeoutMs?: number
+  /** D-018 — per-line stream callbacks, fired as the sandbox produces output. */
+  onStdout?: (line: string) => void
+  onStderr?: (line: string) => void
 }
 
 export interface SandboxProvider {

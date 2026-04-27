@@ -15,6 +15,11 @@ import {
     ToolCallEvent
 } from "./legacy-types";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
+import { getSandboxProvider } from "@/lib/sandbox";
+import { isForbiddenCommand } from "@/lib/sandbox/forbidden-commands";
+
+const truncateTail = (s: string, max = 4096): string =>
+    s.length <= max ? s : `…(truncated)…\n${s.slice(-max)}`;
 
 const anthropic = new Anthropic();
 
@@ -157,6 +162,30 @@ const tools: Anthropic.Tool[] = [
             required: ["path", "search", "replace"],
         },
     },
+    {
+        // D-018 — re-added once the per-project sandbox lifecycle landed.
+        name: "run_command",
+        description:
+            "Execute a shell command inside the project sandbox. 60-second default timeout. Use for `npm install`, `npm test`, `npm run build`. NOT for `npm run dev` (already running). Streams stdout/stderr live to the chat.",
+        input_schema: {
+            type: "object" as const,
+            properties: {
+                command: {
+                    type: "string",
+                    description: "The shell command to run.",
+                },
+                cwd: {
+                    type: "string",
+                    description: "Optional working directory inside the sandbox.",
+                },
+                timeoutMs: {
+                    type: "number",
+                    description: "Optional override for the 60-second default.",
+                },
+            },
+            required: ["command"],
+        },
+    },
 ];
 
 interface ToolInput {
@@ -166,6 +195,9 @@ interface ToolInput {
     search?: string;
     replace?: string;
     replace_all?: boolean;
+    command?: string;
+    cwd?: string;
+    timeoutMs?: number;
 }
 
 /**
@@ -175,9 +207,10 @@ async function executeToolCall(
     context: AgentContext,
     toolName: string,
     toolInput: ToolInput,
-    internalKey: string
+    internalKey: string,
+    toolUseId: string,
 ): Promise<{ result: unknown; fileOperation?: FileOperation }> {
-    const { projectId } = context;
+    const { projectId, messageId } = context;
 
     switch (toolName) {
         case "read_file": {
@@ -397,6 +430,79 @@ async function executeToolCall(
             };
         }
 
+        case "run_command": {
+            const command = toolInput.command!;
+            const cwd = toolInput.cwd;
+            const timeoutMs = toolInput.timeoutMs ?? 60_000;
+
+            if (isForbiddenCommand(command)) {
+                return {
+                    result: {
+                        error: `FORBIDDEN: command rejected by safety policy. See CONSTITUTION §13.`,
+                    },
+                };
+            }
+
+            // Look up the per-project sandbox row (D-018 lifecycle).
+            const sandboxRow = await convex.query(api.sandboxes.getByProject, {
+                internalKey,
+                projectId,
+            });
+            if (!sandboxRow) {
+                return {
+                    result: {
+                        error:
+                            "SANDBOX_DEAD: no sandbox provisioned for this project. The agent loop normally creates one before running tools — ask the user to retry.",
+                    },
+                };
+            }
+            if (!sandboxRow.alive) {
+                return {
+                    result: {
+                        error:
+                            "SANDBOX_DEAD: sandbox is marked dead. The agent loop will reprovision on next run.",
+                    },
+                };
+            }
+
+            const sandbox = getSandboxProvider();
+            try {
+                const r = await sandbox.exec(sandboxRow.sandboxId, command, {
+                    cwd,
+                    timeoutMs,
+                    onStdout: (line) => {
+                        void convex.mutation(api.system.appendToolStream, {
+                            internalKey,
+                            messageId,
+                            toolUseId,
+                            kind: "stdout",
+                            line,
+                        });
+                    },
+                    onStderr: (line) => {
+                        void convex.mutation(api.system.appendToolStream, {
+                            internalKey,
+                            messageId,
+                            toolUseId,
+                            kind: "stderr",
+                            line,
+                        });
+                    },
+                });
+                return {
+                    result: {
+                        stdout: truncateTail(r.stdout),
+                        stderr: truncateTail(r.stderr),
+                        exitCode: r.exitCode,
+                        durationMs: r.durationMs,
+                    },
+                };
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : "unknown";
+                return { result: { error: `COMMAND_FAILED: ${msg}` } };
+            }
+        }
+
         default:
             return { result: { error: `Unknown tool: ${toolName}` } };
     }
@@ -514,7 +620,8 @@ ${formatFileTree(fileTree)}
                 context,
                 toolUse.name,
                 toolUse.input as ToolInput,
-                internalKey
+                internalKey,
+                toolUse.id,
             );
 
             if (fileOperation) {

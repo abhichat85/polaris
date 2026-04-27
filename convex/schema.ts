@@ -139,6 +139,18 @@ export default defineSchema({
             v.literal("completed"),
             v.literal("error"),
           ),
+          // D-018 — per-line stdout/stderr emitted by `run_command` and
+          // surfaced in the chat <ToolOutputStream /> component. Bounded
+          // at 4 KB total per call (enforced in `appendToolStream`).
+          stream: v.optional(
+            v.array(
+              v.object({
+                kind: v.union(v.literal("stdout"), v.literal("stderr")),
+                line: v.string(),
+                at: v.number(),
+              }),
+            ),
+          ),
         }),
       ),
     ),

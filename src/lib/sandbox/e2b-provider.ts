@@ -137,9 +137,13 @@ export class E2BSandboxProvider implements SandboxProvider {
   async exec(id: string, cmd: string, opts: ExecOptions = {}): Promise<ExecResult> {
     const sbx = await this.connect(id)
     const t0 = Date.now()
+    // D-018 — pass per-line stream handlers to the E2B SDK so the chat UI
+    // can render stdout/stderr live via the toolCall.stream array.
     const r = await sbx.commands.run(cmd, {
       cwd: opts.cwd ?? "/",
       timeoutMs: opts.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS,
+      ...(opts.onStdout && { onStdout: opts.onStdout }),
+      ...(opts.onStderr && { onStderr: opts.onStderr }),
     })
     return {
       stdout: r.stdout ?? "",

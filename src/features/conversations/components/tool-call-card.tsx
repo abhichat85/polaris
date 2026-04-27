@@ -23,6 +23,10 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import {
+  ToolOutputStream,
+  type ToolStreamLine,
+} from "@/components/ai-elements/tool-output-stream"
 
 export type ToolStatus = "running" | "completed" | "error"
 
@@ -33,6 +37,8 @@ export interface ToolCallCardProps {
     args: Record<string, unknown> | unknown
     status: ToolStatus
     result?: unknown
+    /** D-018 — live stdout/stderr emitted by `run_command`. */
+    stream?: ToolStreamLine[]
   }
 }
 
@@ -138,6 +144,11 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         <div className="text-xs font-mono text-muted-foreground truncate">
           $ {command}
         </div>
+      )}
+
+      {/* D-018 — live streaming output while the command is running. */}
+      {isRunCommand && toolCall.status === "running" && (
+        <ToolOutputStream lines={toolCall.stream} />
       )}
 
       {stdout !== undefined && stdout !== "" && (
