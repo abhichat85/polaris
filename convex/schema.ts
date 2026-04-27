@@ -412,6 +412,22 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_email", ["email"]),
 
+  // ── Steering queue (D-033 — pi-mono port) ────────────────────────────────
+  /**
+   * Mid-run steering messages. The user types a follow-up "wait, also
+   * include X" WHILE the agent is mid-loop; we enqueue here, the
+   * AgentRunner checks between iterations and injects as a user message.
+   * Authority: pi-mono inspiration.
+   */
+  steering_queue: defineTable({
+    messageId: v.id("messages"),
+    text: v.string(),
+    createdAt: v.number(),
+    consumed: v.boolean(),
+  })
+    .index("by_message", ["messageId"])
+    .index("by_message_consumed", ["messageId", "consumed"]),
+
   // ── Plans (D-019) — quota source-of-truth ────────────────────────────────
   /**
    * Plan tier definitions. One row per tier. Seeded by

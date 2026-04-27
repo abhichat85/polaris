@@ -26,6 +26,7 @@ import type * as plans from "../plans.js";
 import type * as projects from "../projects.js";
 import type * as sandboxes from "../sandboxes.js";
 import type * as specs from "../specs.js";
+import type * as steering from "../steering.js";
 import type * as system from "../system.js";
 import type * as usage from "../usage.js";
 import type * as user_profiles from "../user_profiles.js";
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   projects: typeof projects;
   sandboxes: typeof sandboxes;
   specs: typeof specs;
+  steering: typeof steering;
   system: typeof system;
   usage: typeof usage;
   user_profiles: typeof user_profiles;
