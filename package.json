@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "inngest:dev": "npx inngest-cli@latest dev",
+    "dev:all": "concurrently --names \"NEXT,CONVEX,INNGEST\" --prefix-colors \"cyan,magenta,yellow\" --kill-others-on-fail \"pnpm dev\" \"pnpm convex:dev\" \"pnpm inngest:dev\"",
+    "inngest:dev": "npx -y inngest-cli@latest dev",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
     "build": "next build",
@@ -129,6 +130,7 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/ui": "^4.1.5",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "jsdom": "^29.0.2",
