@@ -20,6 +20,8 @@ import { NonRetriableError } from "inngest"
 
 import { inngest } from "@/inngest/client"
 import { Evaluator } from "@/lib/agents/evaluator"
+import { runLints } from "@/lib/scaffold/lints/types"
+import { nextJsLints } from "@/lib/scaffold/lints/nextjs"
 
 import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
@@ -84,13 +86,35 @@ export const evalRun = inngest.createFunction(
       )
     }
 
-    // Step 2 — run the Evaluator.
+    // Step 1.5 — D-031 mechanical lints. Load the project's UI files
+    // and run the Next.js lint bundle. Findings are passed into the
+    // Evaluator prompt so they become part of the verdict + issues.
+    const lintFindings = await step.run("run-lints", async () => {
+      const allFiles = await convex.query(api.system.getProjectFilesInternal, {
+        internalKey,
+        projectId: data.projectId as Id<"projects">,
+      })
+      // Lints expect FileForLint = { path, content }. Filter binaries.
+      const lintInputFiles = (allFiles ?? [])
+        .filter(
+          (f: { type?: string; path?: string; content?: string }) =>
+            f.type === "file" && typeof f.content === "string" && f.path,
+        )
+        .map((f: { path?: string; content?: string }) => ({
+          path: f.path!,
+          content: f.content!,
+        }))
+      return runLints(nextJsLints, lintInputFiles)
+    })
+
+    // Step 2 — run the Evaluator with lint findings folded in.
     const report = await step.run("evaluator-call", async () => {
       const evaluator = new Evaluator({ apiKey: anthropicKey })
       return await evaluator.evaluate({
         sprint: data.sprint,
         planMarkdown: plan.planMarkdown!,
         projectId: data.projectId,
+        lintFindings,
       })
     })
 

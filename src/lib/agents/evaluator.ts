@@ -41,6 +41,19 @@ export interface EvaluatorInput {
   planMarkdown: string
   /** Convex projectId for the read-only tool surface. */
   projectId: string
+  /**
+   * D-031 — pre-computed mechanical lint findings. eval/run Inngest fn
+   * loads project files + runs `runLints(...)` before calling the
+   * Evaluator. Findings are folded into the rubric and the issues[] in
+   * the EvalReport.
+   */
+  lintFindings?: Array<{
+    path: string
+    lintId: string
+    severity: "error" | "warning"
+    message: string
+    remediation: string
+  }>
 }
 
 const DEFAULT_MODEL = "claude-sonnet-4-6-20251015"
@@ -67,10 +80,29 @@ export class Evaluator {
   }
 
   async evaluate(input: EvaluatorInput): Promise<EvalReport> {
+    // D-031 — fold mechanical lint findings into the prompt so the
+    // Evaluator weights them in `codeQuality` + lists actionable
+    // remediation in `issues[]`.
+    const lintBlock =
+      input.lintFindings && input.lintFindings.length > 0
+        ? `\n\n--- MECHANICAL LINT FINDINGS ---\n` +
+          input.lintFindings
+            .map(
+              (l) =>
+                `[${l.severity.toUpperCase()}] ${l.path} (${l.lintId})\n  ${l.message}\n  remediation: ${l.remediation}`,
+            )
+            .join("\n\n") +
+          `\n--- END LINT FINDINGS ---\n` +
+          `These are mechanical findings from the project's invariants. Each is\n` +
+          `actionable. Include them verbatim in your \`issues[]\` if they affect\n` +
+          `this sprint's features. Reduce \`codeQuality\` accordingly.`
+        : ""
+
     const userContent =
       `Sprint to grade: ${input.sprint}\n\n` +
-      `--- PLAN ---\n${input.planMarkdown}\n--- END PLAN ---\n\n` +
-      `Grade the sprint above. Return ONLY the JSON object as documented.`
+      `--- PLAN ---\n${input.planMarkdown}\n--- END PLAN ---` +
+      lintBlock +
+      `\n\nGrade the sprint above. Return ONLY the JSON object as documented.`
 
     const response = await this.client.messages.create(
       {
