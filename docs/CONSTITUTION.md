@@ -2551,6 +2551,40 @@ Every architectural decision, its alternatives, and why we chose what we chose. 
 
 ---
 
+### D-026: Plan Mode — Plans-as-Files + Planner Agent (locked 2026-04-27)
+
+The agent now operates in two phases: a Planner produces a structured Plan from the user's prompt; the Generator executes against it. Plans live both in `convex/specs.planMarkdown` (system of record) and `/docs/plan.md` (human-editable in the IDE). 9th tool `set_feature_status` lets the Generator tick boxes as it ships. Authority: Anthropic + OpenAI articles converge on plans-as-files.
+
+### D-027: Auto-Compaction at 100K + Scratchpad Memory (locked 2026-04-27)
+
+When total tokens cross 100K, AgentRunner calls a separate Compactor agent that produces a structured handoff artifact (<2 KB) and resets `state.messages` to a single user message carrying it. Triggers ONCE per run. New `/.polaris/notes.md` convention is the agent's durable scratchpad across sessions. `docs/` and `.polaris/` whitelisted in FilePermissionPolicy.
+
+### D-028: Multi-Agent Evaluator (Paid Tier) (locked 2026-04-27)
+
+Free tier preserves today's single-agent loop. Pro/Team tier gets a separate read-only Evaluator agent on every sprint completion. Returns a JSON-shaped EvalReport (verdict + 4-axis scores + actionable issues). RETURN-FOR-FIX re-fires `agent/run` with the issues prepended. Hard cap 3 rounds per sprint before escalating to human review.
+
+### D-029: Playwright in E2B Template + 4 browser_* Tools (locked 2026-04-27)
+
+The agent gains `browser_navigate`, `browser_screenshot`, `browser_click`, `browser_inspect` so it can SEE the rendered preview. Phase 4 v1 ships the tool definitions; handlers return `BROWSER_NOT_AVAILABLE` until the operator-side E2B image rebuild bakes in `playwright + chromium`.
+
+### D-030: Per-Project AGENTS.md + Progressive Disclosure (locked 2026-04-27)
+
+Each scaffolded project ships with a 100-line `/AGENTS.md` table-of-contents pointing to deeper docs. agent-loop.ts injects it into the system prompt at session start. The canonical AGENT_SYSTEM_PROMPT stays slim; project-specific knowledge lives in the file the user can edit. OpenAI's exact pattern.
+
+### D-031: Per-Template Lints with Remediation Injection (locked 2026-04-27)
+
+`Lint` interface at `src/lib/scaffold/lints/types.ts`. 5 starter Next.js lints with concrete remediation strings. Evaluator runs lints + injects failures into Generator's next turn — OpenAI's "custom linters that inject remediation into agent context" pattern.
+
+### D-032: Provider-Agnostic Context Shape (locked 2026-04-27)
+
+`Context = { systemPrompt, messages: ContextMessage[], tools, sessionId?, cacheRetention? }` is the conversation shape all adapters accept. v1 ships type defs + serializeContext / parseContext helpers + tests. v2 (next session) ports adapters. pi-mono's pattern.
+
+### D-033: Mid-Run Steering Queue (locked 2026-04-27)
+
+`steering_queue` Convex table. User mutation `enqueue` (auth-bound). Internal-keyed `nextPending` + `markConsumed`. AgentSink gains optional `pullPendingSteer(messageId)`. AgentRunner checks between iterations and injects as user message. pi-mono's `steer()` pattern, ported.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
@@ -2606,4 +2640,4 @@ It is not a finished document. It will change. Amend it deliberately. Never viol
 
 *Build Polaris correctly the first time, so we don't have to build it twice.*
 
-— Authors, 2026-04-26 (last amended 2026-04-27: D-023 prompt caching, D-024 thinking events, D-025 tier-aware run budgets)
+— Authors, 2026-04-26 (last amended 2026-04-27: D-026 plan mode, D-027 compaction, D-028 evaluator, D-029 browser tools, D-030 AGENTS.md, D-031 lints, D-032 Context shape, D-033 steering)
