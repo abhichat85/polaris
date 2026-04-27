@@ -319,3 +319,136 @@ export const removeMember = mutation({
     return target._id
   },
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D-020 — auto-create personal workspace for a new Clerk user.
+// Called by /api/webhooks/clerk on user.created. Idempotent — skips when the
+// user already owns a workspace.
+// ─────────────────────────────────────────────────────────────────────────────
+const requireInternalKey = (key: string) => {
+  const expected = process.env.POLARIS_CONVEX_INTERNAL_KEY
+  if (!expected) throw new Error("POLARIS_CONVEX_INTERNAL_KEY is not configured")
+  if (key !== expected) throw new Error("Invalid internal key")
+}
+
+export const createPersonal = mutation({
+  args: {
+    internalKey: v.string(),
+    userId: v.string(),
+    email: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    requireInternalKey(args.internalKey)
+
+    // Idempotent: skip if user already owns a workspace.
+    const existing = await ctx.db
+      .query("workspaces")
+      .withIndex("by_owner", (q) => q.eq("ownerId", args.userId))
+      .first()
+    if (existing) return existing._id
+
+    // Plan from customers row, default "free".
+    const customer = await ctx.db
+      .query("customers")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .unique()
+    const plan = customer?.plan ?? "free"
+
+    // Slug from userId — stable, unique enough for personal workspaces.
+    const slugBase = `personal-${args.userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toLowerCase()}`
+    let slug = slugBase
+    let n = 1
+    while (true) {
+      const taken = await ctx.db
+        .query("workspaces")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first()
+      if (!taken) break
+      n += 1
+      slug = `${slugBase}-${n}`
+      if (n > 50) throw new Error("Could not allocate slug")
+    }
+
+    const now = Date.now()
+    const workspaceId = await ctx.db.insert("workspaces", {
+      name: "Personal workspace",
+      slug,
+      ownerId: args.userId,
+      plan,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await ctx.db.insert("workspace_members", {
+      workspaceId,
+      userId: args.userId,
+      role: "owner",
+      joinedAt: now,
+    })
+
+    return workspaceId
+  },
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D-020 — invite-by-email. Resolves the email through the clerk_user_cache;
+// if hit, inserts the membership row idempotently. If no Clerk user is
+// cached for that email, returns { ok: false, reason: "not_found" } so the
+// UI can surface "ask them to sign up first".
+// ─────────────────────────────────────────────────────────────────────────────
+export const inviteByEmail = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    email: v.string(),
+    role: v.union(v.literal("admin"), v.literal("member")),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const callerId = identity.subject
+
+    // Owner-only.
+    const callerMembership = await ctx.db
+      .query("workspace_members")
+      .withIndex("by_user_workspace", (q) =>
+        q.eq("userId", callerId).eq("workspaceId", args.workspaceId),
+      )
+      .first()
+    if (!callerMembership || callerMembership.role !== "owner") {
+      throw new Error("Only workspace owners can invite members")
+    }
+
+    // Resolve email via Clerk user cache.
+    const target = await ctx.db
+      .query("clerk_user_cache")
+      .withIndex("by_email", (q) => q.eq("email", args.email.toLowerCase()))
+      .first()
+    if (!target) {
+      return {
+        ok: false as const,
+        reason: "not_found" as const,
+        message:
+          "No Polaris user with that email yet. Ask them to sign up at /sign-up first.",
+      }
+    }
+
+    // Idempotent membership insert.
+    const existing = await ctx.db
+      .query("workspace_members")
+      .withIndex("by_user_workspace", (q) =>
+        q.eq("userId", target.userId).eq("workspaceId", args.workspaceId),
+      )
+      .first()
+    if (existing) {
+      return { ok: true as const, memberId: existing._id, alreadyMember: true }
+    }
+
+    const memberId = await ctx.db.insert("workspace_members", {
+      workspaceId: args.workspaceId,
+      userId: target.userId,
+      role: args.role,
+      joinedAt: Date.now(),
+    })
+
+    return { ok: true as const, memberId, alreadyMember: false }
+  },
+})

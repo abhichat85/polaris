@@ -19,8 +19,8 @@ const TIERS: Tier[] = [
     cadence: "/month",
     blurb: "Build something real. Free forever.",
     features: [
-      "100 agent runs / month",
-      "1 deployed project",
+      "50K Anthropic tokens / month (~100 medium agent runs)",
+      "3 projects, 1 deploy / month",
       "Public GitHub repos",
       "Community support",
     ],
@@ -33,11 +33,11 @@ const TIERS: Tier[] = [
     cadence: "/month",
     blurb: "For builders who ship.",
     features: [
-      "1,500 agent runs / month",
-      "Unlimited deployed projects",
+      "2M Anthropic tokens / month (~3,000 medium agent runs)",
+      "50 projects, 100 deploys / month",
       "Private GitHub repos",
       "Email support — 24h response",
-      "Daily $5 cost ceiling",
+      "Daily $20 cost ceiling",
     ],
     cta: { label: "Upgrade to Pro", href: "/sign-up?plan=pro" },
     highlighted: true,
@@ -49,13 +49,14 @@ const TIERS: Tier[] = [
     cadence: "/seat / month",
     blurb: "For startups building together.",
     features: [
-      "Unlimited agent runs",
-      "Unlimited projects",
+      "10M Anthropic tokens / month",
+      "200 projects, 500 deploys, 5 seats",
       "Shared workspace",
       "Audit log",
       "Priority support — 4h response",
+      "Daily $100 cost ceiling",
     ],
-    cta: { label: "Contact sales", href: "mailto:hello@praxiomai.xyz" },
+    cta: { label: "Subscribe", href: "/api/billing/checkout?tier=team" },
   },
 ]
 

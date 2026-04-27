@@ -371,6 +371,23 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
 
+  // ── Clerk user cache (D-020) ─────────────────────────────────────────────
+  /**
+   * Lightweight projection of Clerk user fields, populated by the Clerk
+   * webhook on user.created / user.updated. Lets us render member email +
+   * name in the workspace UI without an HTTP roundtrip per row.
+   */
+  clerk_user_cache: defineTable({
+    userId: v.string(),
+    email: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_email", ["email"]),
+
   // ── Plans (D-019) — quota source-of-truth ────────────────────────────────
   /**
    * Plan tier definitions. One row per tier. Seeded by

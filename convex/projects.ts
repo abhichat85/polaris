@@ -51,10 +51,54 @@ export const create = mutation({
     // on MutationCtx as well, so the cast is safe.
     const scope = await resolveScope(ctx as unknown as QueryCtx, identity.subject, args.workspaceId);
 
+    // D-020 — every NEW project must belong to a workspace. New users get
+    // one auto-created via the Clerk webhook (`workspaces.createPersonal`),
+    // so this should only ever fail for legacy users who never re-signed
+    // in after the migration was deployed; in that case we auto-bootstrap
+    // their personal workspace inline before inserting the project.
+    let workspaceId = scope.workspaceId;
+    if (!workspaceId) {
+      // Inline bootstrap — same shape as createPersonal, scoped to this
+      // mutation's transaction so we never see a partial state.
+      const slugBase = `personal-${identity.subject.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toLowerCase()}`;
+      let slug = slugBase;
+      let n = 1;
+      while (true) {
+        const taken = await ctx.db
+          .query("workspaces")
+          .withIndex("by_slug", (q) => q.eq("slug", slug))
+          .first();
+        if (!taken) break;
+        n += 1;
+        slug = `${slugBase}-${n}`;
+        if (n > 50) throw new Error("Could not allocate slug");
+      }
+      const customer = await ctx.db
+        .query("customers")
+        .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+        .unique();
+      const plan = customer?.plan ?? "free";
+      const now = Date.now();
+      workspaceId = await ctx.db.insert("workspaces", {
+        name: "Personal workspace",
+        slug,
+        ownerId: identity.subject,
+        plan,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("workspace_members", {
+        workspaceId,
+        userId: identity.subject,
+        role: "owner",
+        joinedAt: now,
+      });
+    }
+
     const projectId = await ctx.db.insert("projects", {
       name: args.name,
       ownerId: identity.subject,
-      ...(scope.workspaceId && { workspaceId: scope.workspaceId }),
+      workspaceId,
       updatedAt: Date.now(),
     });
 

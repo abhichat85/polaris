@@ -19,7 +19,7 @@
 - [Article V — The Stack (Locked)](#article-v--the-stack-locked)
 - [Article VI — Abstraction Interfaces](#article-vi--abstraction-interfaces)
 - [Article VII — The Agent Loop](#article-vii--the-agent-loop)
-- [Article VIII — The Seven Agent Tools](#article-viii--the-seven-agent-tools)
+- [Article VIII — The Eight Agent Tools](#article-viii--the-eight-agent-tools)
 - [Article IX — File Safety Policy](#article-ix--file-safety-policy)
 - [Article X — Consistency Model](#article-x--consistency-model)
 - [Article XI — Data Model](#article-xi--data-model)
@@ -740,11 +740,13 @@ These are constitutional prohibitions:
 
 ---
 
-## Article VIII — The Seven Agent Tools
+## Article VIII — The Eight Agent Tools
 
-The agent has exactly seven tools in v1.0. Each is a deliberate, scoped capability.
+The agent has exactly eight tools in v1.0. Each is a deliberate, scoped capability.
 
-> **Amended 2026-04-26 (D-017):** Originally six tools. `edit_file` was added as the precision instrument for targeted changes to existing files; `write_file` remains the full-overwrite primitive. See D-017 in Article XX.
+> **Amended 2026-04-26 (D-017):** Originally six tools; `edit_file` was added as the seventh — the precision instrument for targeted changes. `write_file` remains the full-overwrite primitive.
+>
+> **Amended 2026-04-27 (D-018):** `run_command` re-instated as the eighth tool, gated by the per-project sandbox lifecycle. Output streams live to the chat via `messages.toolCalls[].stream[]`.
 
 ### §8.1 Tool Definitions
 

@@ -4,19 +4,26 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
+import { useActiveWorkspaceId } from "@/features/workspaces/hooks/use-active-workspace";
 
 export const useProject = (projectId: Id<"projects">) => {
   return useQuery(api.projects.getById, { id: projectId });
 };
 
 export const useProjects = () => {
-  return useQuery(api.projects.get, {});
+  // D-020 — scope by active-workspace cookie when set. The Convex query
+  // falls back to ownerId when workspaceId is undefined, preserving the
+  // legacy behavior for users without a workspace yet.
+  const workspaceId = useActiveWorkspaceId();
+  return useQuery(api.projects.get, workspaceId ? { workspaceId } : {});
 };
 
 export const useProjectsPartial = (limit: number) => {
-  return useQuery(api.projects.getPartial, {
-    limit,
-  });
+  const workspaceId = useActiveWorkspaceId();
+  return useQuery(
+    api.projects.getPartial,
+    workspaceId ? { limit, workspaceId } : { limit },
+  );
 };
 
 export const useCreateProject = () => {

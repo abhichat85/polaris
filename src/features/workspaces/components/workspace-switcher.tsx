@@ -50,11 +50,17 @@ import {
   useWorkspaces,
   useCreateWorkspace,
 } from "../hooks/use-workspaces";
+import {
+  useActiveWorkspaceId,
+  useSetActiveWorkspace,
+} from "../hooks/use-active-workspace";
 
 export const WorkspaceSwitcher = () => {
   const current = useCurrentWorkspace();
   const all = useWorkspaces();
   const createWorkspace = useCreateWorkspace();
+  const activeId = useActiveWorkspaceId();
+  const setActive = useSetActiveWorkspace();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
@@ -138,10 +144,14 @@ export const WorkspaceSwitcher = () => {
             </div>
           ) : (
             all.map((w) => {
-              const isCurrent = current?._id === w._id;
+              const isActive = activeId === w._id;
               return (
                 <DropdownMenuItem
                   key={w._id}
+                  onClick={() => {
+                    setActive(w._id);
+                    toast.success(`Switched to ${w.name}`);
+                  }}
                   className="flex items-center justify-between gap-2"
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -151,7 +161,7 @@ export const WorkspaceSwitcher = () => {
                       {w.role}
                     </span>
                   </div>
-                  {isCurrent && (
+                  {isActive && (
                     <CheckIcon className="size-3.5 text-primary shrink-0" />
                   )}
                 </DropdownMenuItem>

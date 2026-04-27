@@ -117,13 +117,17 @@ export async function POST(request: Request) {
     }
   );
 
-  // Invoke inngest to process the message with agent
+  // D-018, Article XIX migration — emit `agent/run` (handled by the
+  // new agent-loop with E2B sandbox lifecycle + run_command + streaming).
+  // The legacy `message/sent` listener (`processMessage`) remains
+  // registered for in-flight events but is no longer the active path.
   const event = await inngest.send({
-    name: "message/sent",
+    name: "agent/run",
     data: {
       messageId: assistantMessageId,
       conversationId: conversationId as Id<"conversations">,
       projectId,
+      userId,
     },
   });
 

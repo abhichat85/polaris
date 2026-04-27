@@ -113,6 +113,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@clerk/testing": "^2.0.21",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",

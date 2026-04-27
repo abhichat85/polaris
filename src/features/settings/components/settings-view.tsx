@@ -15,6 +15,17 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+
+import { api } from "../../../../convex/_generated/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SignOutButton, useUser } from "@clerk/nextjs";
@@ -465,9 +476,147 @@ const StatusBadge = ({
 // Workspace pane
 // ---------------------------------------------------------------------------
 
+const MemberRow = ({
+  member,
+  isFirst,
+}: {
+  member: { _id: string; userId: string; role: "owner" | "admin" | "member"; joinedAt: number };
+  isFirst: boolean;
+}) => {
+  const profile = useQuery(api.clerk_users.getByUserId, { userId: member.userId });
+  const display =
+    profile?.firstName || profile?.lastName
+      ? `${profile?.firstName ?? ""} ${profile?.lastName ?? ""}`.trim()
+      : profile?.email ?? member.userId;
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between px-3 py-2",
+        !isFirst && "[box-shadow:inset_0_1px_0_hsl(var(--surface-4))]",
+      )}
+    >
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground truncate">
+          {display}
+        </div>
+        <div className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
+          {profile?.email ? `${profile.email} · ` : ""}Joined{" "}
+          {new Date(member.joinedAt).toLocaleDateString()}
+        </div>
+      </div>
+      <span
+        className={cn(
+          "text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md ml-2 shrink-0",
+          member.role === "owner"
+            ? "bg-primary/10 text-primary"
+            : member.role === "admin"
+              ? "bg-info/15 text-info"
+              : "bg-surface-4 text-muted-foreground",
+        )}
+      >
+        {member.role}
+      </span>
+    </div>
+  );
+};
+
+const InviteDialog = ({
+  workspaceId,
+  open,
+  onOpenChange,
+}: {
+  workspaceId: import("../../../../convex/_generated/dataModel").Id<"workspaces">;
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+}) => {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"admin" | "member">("member");
+  const [pending, setPending] = useState(false);
+  const inviteByEmail = useMutation(api.workspaces.inviteByEmail);
+
+  const submit = async () => {
+    if (!email.trim()) return;
+    setPending(true);
+    try {
+      const r = await inviteByEmail({
+        workspaceId,
+        email: email.trim().toLowerCase(),
+        role,
+      });
+      if (r.ok) {
+        toast.success(
+          r.alreadyMember
+            ? `${email} is already a member`
+            : `Invited ${email} as ${role}`,
+        );
+        setEmail("");
+        onOpenChange(false);
+      } else {
+        toast.error(r.message);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not invite");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite member</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <label className="text-xs font-medium text-muted-foreground">
+            Email
+            <Input
+              autoFocus
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void submit();
+              }}
+              placeholder="teammate@company.com"
+              disabled={pending}
+              className="mt-1.5"
+            />
+          </label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Role
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as "admin" | "member")}
+              disabled={pending}
+              className="mt-1.5 w-full h-9 rounded-md bg-surface-3 px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+            The user must already have a Polaris account. If they don&apos;t,
+            ask them to sign up first.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} disabled={pending || !email.trim()}>
+            {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : "Invite"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const WorkspacePane = () => {
   const workspace = useCurrentWorkspace();
   const members = useWorkspaceMembers(workspace?._id ?? null);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   if (workspace === undefined) {
     return (
@@ -501,9 +650,19 @@ const WorkspacePane = () => {
             <span className="uppercase tracking-wide">{workspace.plan}</span>
           </div>
         </div>
-        <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md bg-surface-3 text-muted-foreground">
-          {(members?.length ?? 0)} member{members?.length === 1 ? "" : "s"}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md bg-surface-3 text-muted-foreground">
+            {(members?.length ?? 0)} member{members?.length === 1 ? "" : "s"}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7"
+            onClick={() => setInviteOpen(true)}
+          >
+            Invite
+          </Button>
+        </div>
       </div>
 
       {members === undefined ? (
@@ -514,45 +673,16 @@ const WorkspacePane = () => {
       ) : (
         <div className="flex flex-col rounded-md bg-surface-3 overflow-hidden">
           {members.map((m, i) => (
-            <div
-              key={m._id}
-              className={cn(
-                "flex items-center justify-between px-3 py-2",
-                i > 0 && "[box-shadow:inset_0_1px_0_hsl(var(--surface-4))]",
-              )}
-            >
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-foreground truncate font-mono">
-                  {m.userId}
-                </div>
-                <div className="text-[10px] text-muted-foreground/70 mt-0.5">
-                  Joined {new Date(m.joinedAt).toLocaleDateString()}
-                </div>
-              </div>
-              <span
-                className={cn(
-                  "text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md",
-                  m.role === "owner"
-                    ? "bg-primary/10 text-primary"
-                    : m.role === "admin"
-                      ? "bg-info/15 text-info"
-                      : "bg-surface-4 text-muted-foreground",
-                )}
-              >
-                {m.role}
-              </span>
-            </div>
+            <MemberRow key={m._id} member={m} isFirst={i === 0} />
           ))}
         </div>
       )}
 
-      <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-        Member invitation flow ships in a follow-up. Until then, owners can
-        invite via Convex CLI:{" "}
-        <code className="font-mono text-foreground/80">
-          npx convex run workspaces:invite &lsquo;{`{...}`}&rsquo;
-        </code>
-      </p>
+      <InviteDialog
+        workspaceId={workspace._id}
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+      />
     </div>
   );
 };
