@@ -410,9 +410,11 @@ export default defineSchema({
   // ── Workspaces (D-020) — multi-tenancy ───────────────────────────────────
   /**
    * Top-level container for projects + members. Personal workspaces are
-   * created by the migration mutation; new users get one on first sign-in
-   * (handled by the user_profiles upsert path — TODO follow-up).
-   * Authority: CONSTITUTION §11.2.
+   * created by the migration mutation for legacy users; new users get one
+   * automatically on Clerk `user.created` webhook
+   * (`workspaces.createPersonal`). `projects.create` also inline-bootstraps
+   * a personal workspace for the caller if they somehow lack one — see
+   * `convex/projects.ts`. Authority: CONSTITUTION §11.2, D-020.
    */
   workspaces: defineTable({
     name: v.string(),
