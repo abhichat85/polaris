@@ -600,3 +600,26 @@ export const appendToolStream = mutation({
     await ctx.db.patch(args.messageId, { toolCalls: nextToolCalls });
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D-024 — extended thinking persistence. The agent loop streams thinking
+// fragments via this mutation so the chat UI can render the collapsible
+// "Thinking" block live. Bounded at 32 KB total per message.
+// ─────────────────────────────────────────────────────────────────────────────
+export const appendThinking = mutation({
+  args: {
+    internalKey: v.string(),
+    messageId: v.id("messages"),
+    delta: v.string(),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey);
+    const message = await ctx.db.get(args.messageId);
+    if (!message) return;
+    const existing = message.thinking ?? "";
+    if (existing.length >= 32_768) return; // cap
+    await ctx.db.patch(args.messageId, {
+      thinking: existing + args.delta,
+    });
+  },
+});

@@ -127,6 +127,12 @@ export default defineSchema({
       ),
     ),
     streamingContent: v.optional(v.string()),
+    /**
+     * D-024 — accumulated extended-thinking text from the LLM. Rendered
+     * by the chat UI inside a collapsible "Thinking" block above the
+     * assistant message body.
+     */
+    thinking: v.optional(v.string()),
     toolCalls: v.optional(
       v.array(
         v.object({
