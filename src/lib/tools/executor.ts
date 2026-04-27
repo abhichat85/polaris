@@ -252,17 +252,18 @@ export class ToolExecutor {
       }
     }
     try {
+      // projectRoot omitted so the sandbox provider's default cwd applies.
+      // In this codebase, project files live at the sandbox FS root: writeFile
+      // uses `toPosix` to produce `/src/...`, `/app/...`, etc., and the e2b
+      // provider already defaults `cwd` to "/". Letting the default flow
+      // through keeps search_code aligned with the provider convention rather
+      // than hard-coding a duplicate constant here.
       const result = await searchCode(input, {
         exec: (cmd, opts) => this.deps.sandbox.exec(ctx.sandboxId!, cmd, opts ?? {}),
-        projectRoot: "/",
       })
       return {
         ok: true,
-        data: {
-          matches: result.matches,
-          truncated: result.truncated,
-          formatted: formatMatches(result),
-        },
+        data: { formatted: formatMatches(result) },
       }
     } catch (err) {
       return {

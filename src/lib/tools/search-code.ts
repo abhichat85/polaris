@@ -38,7 +38,11 @@ export interface SearchCodeDeps {
     cmd: string,
     opts?: { cwd?: string; timeoutMs?: number },
   ) => Promise<{ exitCode: number; stdout: string; stderr: string }>
-  projectRoot: string
+  /**
+   * Working directory for ripgrep. Optional — if omitted, the underlying
+   * sandbox provider's default cwd applies (in the e2b provider, "/").
+   */
+  projectRoot?: string
 }
 
 const DEFAULT_MAX_RESULTS = 80
@@ -69,7 +73,9 @@ export async function searchCode(
   // Query as final positional arg, single-quoted with escapes.
   const cmd = `rg ${flags.join(" ")} -- ${sq(args.query)}`
 
-  const result = await deps.exec(cmd, { cwd: deps.projectRoot, timeoutMs: EXEC_TIMEOUT_MS })
+  const execOpts: { cwd?: string; timeoutMs?: number } = { timeoutMs: EXEC_TIMEOUT_MS }
+  if (deps.projectRoot !== undefined) execOpts.cwd = deps.projectRoot
+  const result = await deps.exec(cmd, execOpts)
 
   // ripgrep: exit 0 = matches, exit 1 = no matches, exit 2+ = error.
   if (result.exitCode === 1) {
@@ -85,8 +91,11 @@ export async function searchCode(
   for (const raw of lines) {
     if (matches.length >= cap) break
     if (!raw) continue
-    // path:line:content — path may contain colons but file paths in this
-    // codebase are POSIX without colons, so a greedy first-two split is safe.
+    // path:line:content — POSIX file paths theoretically allow ':' in the
+    // name, but ripgrep's default output format makes the first two ':'-
+    // separated segments path and line. Files with ':' in the name will be
+    // silently dropped from results — acceptable since the user projects
+    // searched here are web/Next.js codebases that don't use such names.
     const m = raw.match(/^([^:]+):(\d+):(.*)$/)
     if (!m) continue
     const [, path, lineStr, snippet] = m
