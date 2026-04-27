@@ -187,6 +187,63 @@ const tools: Anthropic.Tool[] = [
         },
     },
     {
+        // D-029 — browser tools 10-13. The agent can SEE the rendered
+        // preview running inside the sandbox. Phase 4 v1 ships the tool
+        // definitions; concrete handlers return BROWSER_NOT_AVAILABLE
+        // until the E2B template is rebuilt with playwright + chromium
+        // preinstalled (operator-side image rebuild — see the plan doc).
+        name: "browser_navigate",
+        description:
+            "Load a URL/path in the headless browser inside the sandbox. Used to verify the rendered preview matches acceptance criteria. Returns BROWSER_NOT_AVAILABLE in v1 until the E2B image is rebuilt with Playwright.",
+        input_schema: {
+            type: "object" as const,
+            properties: {
+                path: { type: "string", description: "Path relative to dev-server root" },
+            },
+            required: ["path"],
+        },
+    },
+    {
+        name: "browser_screenshot",
+        description:
+            "Capture a PNG screenshot of the current page. Returns base64. Use to verify visual output. Returns BROWSER_NOT_AVAILABLE in v1.",
+        input_schema: {
+            type: "object" as const,
+            properties: {
+                viewport: {
+                    type: "string",
+                    enum: ["mobile", "tablet", "desktop"],
+                    description: "Viewport preset (default desktop)",
+                },
+            },
+            required: [],
+        },
+    },
+    {
+        name: "browser_click",
+        description:
+            "Click an element matching a CSS selector. Returns the new URL + DOM. Returns BROWSER_NOT_AVAILABLE in v1.",
+        input_schema: {
+            type: "object" as const,
+            properties: {
+                selector: { type: "string", description: "CSS selector" },
+            },
+            required: ["selector"],
+        },
+    },
+    {
+        name: "browser_inspect",
+        description:
+            "Return the rendered DOM (full page or selected element). Truncated to 4 KB. Returns BROWSER_NOT_AVAILABLE in v1.",
+        input_schema: {
+            type: "object" as const,
+            properties: {
+                selector: { type: "string", description: "Optional CSS selector" },
+            },
+            required: [],
+        },
+    },
+    {
         // D-026 — 9th tool. The Generator agent calls this as it ships each
         // plan feature so the user (and the Evaluator, in Phase 3) can see
         // progress. The plan markdown at /docs/plan.md is also kept in sync
@@ -528,6 +585,21 @@ async function executeToolCall(
                 const msg = err instanceof Error ? err.message : "unknown";
                 return { result: { error: `COMMAND_FAILED: ${msg}` } };
             }
+        }
+
+        case "browser_navigate":
+        case "browser_screenshot":
+        case "browser_click":
+        case "browser_inspect": {
+            // D-029 v1 — handlers gated on E2B image build. Return a clear
+            // error so the model adapts (it won't loop on the missing tool;
+            // it'll surface the gap to the user).
+            return {
+                result: {
+                    error:
+                        "BROWSER_NOT_AVAILABLE: the project sandbox doesn't have Playwright preinstalled yet. Phase 4 of the harness plan rebuilds the E2B image with playwright + chromium. Until then, verify behaviour via run_command (e.g. `npm run build`) and ask the user to confirm visual output.",
+                },
+            };
         }
 
         case "set_feature_status": {
