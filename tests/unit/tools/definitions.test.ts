@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest"
 import { AGENT_TOOLS, FORBIDDEN_COMMAND_PATTERNS, getToolDefinition } from "@/lib/tools/definitions"
 
 describe("AGENT_TOOLS", () => {
-  it("exposes exactly eight tools (CONSTITUTION §8, D-017, D-034)", () => {
-    expect(AGENT_TOOLS).toHaveLength(8)
+  it("exposes exactly nine tools (CONSTITUTION §8, D-017, D-034, D-035)", () => {
+    expect(AGENT_TOOLS).toHaveLength(9)
   })
 
-  it("contains the eight Constitutional tools by name", () => {
+  it("contains the nine Constitutional tools by name", () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort()
     expect(names).toEqual(
       [
@@ -14,6 +14,7 @@ describe("AGENT_TOOLS", () => {
         "delete_file",
         "edit_file",
         "list_files",
+        "multi_edit",
         "read_file",
         "run_command",
         "search_code",

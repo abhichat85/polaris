@@ -2591,6 +2591,12 @@ Added `search_code` as the eighth agent tool. ripgrep-backed text search across 
 
 ---
 
+### D-035: `multi_edit` Tool — Atomic Multi-Region Edits (locked 2026-04-28)
+
+Added `multi_edit` as the ninth agent tool. Applies an ordered array of search/replace edits to a single file atomically. Each edit's search must be unique in the file as it stands after preceding edits, or set `replaceAll=true`. All-or-nothing: any failure returns an error code (`EDIT_NOT_FOUND`/`EDIT_NOT_UNIQUE`) with the failing edit's index and leaves the file unchanged. Mirrors Claude Code's MultiEdit semantics. Authority: tool contract §8.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?

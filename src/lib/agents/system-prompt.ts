@@ -36,6 +36,10 @@ contract notes that don't fit in tool descriptions:
   need, fewer round-trips and less context noise.
 - **Prefer surgical edits.** \`edit_file\` is cheaper than \`write_file\`.
   Reserve full rewrites for short files (<100 lines) or genuine rewrites.
+- **Batch related edits.** When you need 2+ surgical changes to the same
+  file, use \`multi_edit\` (one atomic call) instead of multiple
+  \`edit_file\` calls. Each edit's search must be unique after preceding
+  edits — or set \`replaceAll=true\` on that edit.
 - **\`set_feature_status\`** marks plan features in_progress when you
   start, done when acceptance criteria pass. This is what the user sees
   in the live progress UI — keep it accurate.

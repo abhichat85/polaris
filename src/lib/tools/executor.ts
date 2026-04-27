@@ -13,6 +13,7 @@
  */
 
 import { applyEdit } from "./edit-file"
+import { applyMultiEdit, type MultiEditEdit } from "./multi-edit"
 import type { ToolCall } from "@/lib/agents/types"
 import { FORBIDDEN_COMMAND_PATTERNS } from "./definitions"
 import { FilePermissionPolicy } from "./file-permission-policy"
@@ -29,7 +30,13 @@ export interface ToolExecutorDeps {
 const COMMAND_TIMEOUT_MS = 60_000
 const OUTPUT_MAX_CHARS = 4000
 
-const MUTATING_TOOLS = new Set(["write_file", "edit_file", "create_file", "delete_file"])
+const MUTATING_TOOLS = new Set([
+  "write_file",
+  "edit_file",
+  "multi_edit",
+  "create_file",
+  "delete_file",
+])
 
 export class ToolExecutor {
   constructor(private readonly deps: ToolExecutorDeps) {}
@@ -51,6 +58,8 @@ export class ToolExecutor {
           return await this.writeFile(toolCall.input as WriteInput, ctx)
         case "edit_file":
           return await this.editFile(toolCall.input as EditInput, ctx)
+        case "multi_edit":
+          return await this.multiEdit(toolCall.input as MultiEditInput, ctx)
         case "create_file":
           return await this.createFile(toolCall.input as WriteInput, ctx)
         case "delete_file":
@@ -148,6 +157,72 @@ export class ToolExecutor {
         edited: input.path,
         replacedChars: input.search.length,
         addedChars: input.replace.length,
+      },
+    }
+  }
+
+  private async multiEdit(input: MultiEditInput, ctx: ToolExecutionContext): Promise<ToolOutput> {
+    if (!Array.isArray(input.edits) || input.edits.length === 0) {
+      return {
+        ok: false,
+        error:
+          "multi_edit requires a non-empty edits array. Use edit_file for single edits.",
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+
+    for (let i = 0; i < input.edits.length; i++) {
+      const e = input.edits[i] as MultiEditEdit | undefined
+      if (!e || typeof e.search !== "string" || typeof e.replace !== "string") {
+        return {
+          ok: false,
+          error: `multi_edit edit at index ${i} must have string \`search\` and \`replace\` fields.`,
+          errorCode: "INTERNAL_ERROR",
+        }
+      }
+    }
+
+    const existing = await this.deps.files.readPath(ctx.projectId, input.path)
+    if (!existing) {
+      return {
+        ok: false,
+        error: `File not found: ${input.path}`,
+        errorCode: "PATH_NOT_FOUND",
+      }
+    }
+
+    const outcome = applyMultiEdit(existing.content, input.edits)
+    if (outcome.kind === "empty_search") {
+      return {
+        ok: false,
+        error: `Edit ${outcome.index}: search string is empty. Provide a non-empty search.`,
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+    if (outcome.kind === "not_found") {
+      return {
+        ok: false,
+        error: `Edit ${outcome.index}: search string not found in ${input.path} (after preceding edits applied). Re-read the file and refine.`,
+        errorCode: "EDIT_NOT_FOUND",
+      }
+    }
+    if (outcome.kind === "not_unique") {
+      return {
+        ok: false,
+        error: `Edit ${outcome.index}: search string is ambiguous in ${input.path} — matches ${outcome.occurrences} times. Add surrounding context or set replaceAll=true on this edit.`,
+        errorCode: "EDIT_NOT_UNIQUE",
+      }
+    }
+
+    await this.deps.files.writePath(ctx.projectId, input.path, outcome.content, "agent")
+    const sandboxFail = await this.syncToSandbox(ctx, input.path, outcome.content)
+    if (sandboxFail) return sandboxFail
+    return {
+      ok: true,
+      data: {
+        edited: input.path,
+        editsApplied: input.edits.length,
+        newLength: outcome.content.length,
       },
     }
   }
@@ -333,4 +408,5 @@ function classifyError(err: unknown): ToolErrorCode {
 type ReadInput = { path: string }
 type WriteInput = { path: string; content: string }
 type EditInput = { path: string; search: string; replace: string }
+type MultiEditInput = { path: string; edits: MultiEditEdit[] }
 type RunInput = { command: string; cwd?: string }

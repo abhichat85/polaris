@@ -1,5 +1,5 @@
 /**
- * The eight agent tools. Authority: CONSTITUTION.md Article VIII (D-017, D-034 amended).
+ * The nine agent tools. Authority: CONSTITUTION.md Article VIII (D-017, D-034, D-035 amended).
  *
  * Adding a new tool requires a Constitutional amendment (Article XXI) — do not
  * extend this list casually. Removing a tool also requires an amendment.
@@ -62,6 +62,23 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         },
       },
       required: ["path", "search", "replace"],
+    },
+  },
+  {
+    name: "multi_edit",
+    description:
+      "Apply multiple find-and-replace edits to a single file atomically. All edits must succeed or none are applied. Edits are applied sequentially; each edit's search must match exactly once in the file *as it is after preceding edits* (or set replaceAll=true). Use this when you need 2+ surgical changes to the same file — cheaper than multiple edit_file calls and avoids partial-state-between-edits hazards.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        edits: {
+          type: "array",
+          description:
+            "Sequence of edits applied in order. Each edit's search must be unique in the file *after* preceding edits (or set replaceAll=true).",
+        },
+      },
+      required: ["path", "edits"],
     },
   },
   {
