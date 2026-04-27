@@ -21,6 +21,7 @@ import { Allotment } from "allotment";
 
 import { ConversationSidebar } from "@/features/conversations/components/conversation-sidebar";
 import { SpecPanel } from "@/features/specs/components/spec-panel";
+import { PlanPane } from "@/features/specs/components/plan-pane";
 import { FileExplorer } from "./file-explorer";
 import { IdeRail } from "./ide-rail";
 import { ProjectTopbar } from "./project-topbar";
@@ -35,8 +36,14 @@ const AGENT_DEFAULT = 400;
 const AGENT_MIN = 320;
 const AGENT_MAX = 720;
 
-/** What's showing in the left pane: files (default) or spec (Polaris differentiator). */
-type LeftPaneMode = "files" | "spec" | "hidden";
+/**
+ * What's showing in the left pane:
+ *   files — file explorer (default)
+ *   plan  — D-026 build plan with sprint-grouped checklist
+ *   spec  — legacy spec panel (Praxiom feature editor)
+ *   hidden — collapsed
+ */
+type LeftPaneMode = "files" | "plan" | "spec" | "hidden";
 
 export const ProjectIdLayout = ({
   children,
@@ -45,14 +52,16 @@ export const ProjectIdLayout = ({
   children: React.ReactNode;
   projectId: Id<"projects">;
 }) => {
-  const [leftMode, setLeftMode] = useState<LeftPaneMode>("files");
+  const [leftMode, setLeftMode] = useState<LeftPaneMode>("plan");
   const [agentOpen, setAgentOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
 
-  // Praxiom — toggling files: closed → open files; open files → closed.
-  // Spec slot toggles independently within the same pane.
+  // Praxiom — toggling: closed → open; open → closed. Each toggles
+  // independently within the same pane (only one mode visible at a time).
   const handleToggleFiles = () =>
     setLeftMode((m) => (m === "files" ? "hidden" : "files"));
+  const handleTogglePlan = () =>
+    setLeftMode((m) => (m === "plan" ? "hidden" : "plan"));
   const handleToggleSpec = () =>
     setLeftMode((m) => (m === "spec" ? "hidden" : "spec"));
 
@@ -60,9 +69,11 @@ export const ProjectIdLayout = ({
     <div className="w-full h-screen flex bg-surface-0 overflow-hidden">
       <IdeRail
         filesOpen={leftMode === "files"}
+        planOpen={leftMode === "plan"}
         specOpen={leftMode === "spec"}
         agentOpen={agentOpen}
         onToggleFiles={handleToggleFiles}
+        onTogglePlan={handleTogglePlan}
         onToggleSpec={handleToggleSpec}
         onToggleAgent={() => setAgentOpen((v) => !v)}
         onOpenExport={() => setExportOpen(true)}
@@ -85,6 +96,8 @@ export const ProjectIdLayout = ({
             >
               {leftMode === "spec" ? (
                 <SpecPanel projectId={projectId} />
+              ) : leftMode === "plan" ? (
+                <PlanPane projectId={projectId} />
               ) : (
                 <FileExplorer projectId={projectId} />
               )}

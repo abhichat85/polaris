@@ -17,6 +17,7 @@ import {
   FileTextIcon,
   FilesIcon,
   GithubIcon,
+  ListChecksIcon,
   MessageSquareIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -78,9 +79,12 @@ const RailButton = ({
 
 interface IdeRailProps {
   filesOpen: boolean;
+  // D-026 — plan pane visibility
+  planOpen: boolean;
   specOpen: boolean;
   agentOpen: boolean;
   onToggleFiles: () => void;
+  onTogglePlan: () => void;
   onToggleSpec: () => void;
   onToggleAgent: () => void;
   onOpenExport?: () => void;
@@ -88,9 +92,11 @@ interface IdeRailProps {
 
 export const IdeRail = ({
   filesOpen,
+  planOpen,
   specOpen,
   agentOpen,
   onToggleFiles,
+  onTogglePlan,
   onToggleSpec,
   onToggleAgent,
   onOpenExport,
@@ -123,6 +129,13 @@ export const IdeRail = ({
       label={filesOpen ? "Hide files" : "Show files"}
       active={filesOpen}
       onClick={onToggleFiles}
+    />
+    {/* D-026 — plan pane (build plan / sprint checklist) */}
+    <RailButton
+      icon={ListChecksIcon}
+      label={planOpen ? "Hide plan" : "Show plan"}
+      active={planOpen}
+      onClick={onTogglePlan}
     />
     <RailButton
       icon={FileTextIcon}
