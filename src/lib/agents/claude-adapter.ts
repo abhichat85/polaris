@@ -116,6 +116,9 @@ export class ClaudeAdapter implements ModelAdapter {
 
     let inputTokens = 0
     let outputTokens = 0
+    // D-023 — cache metrics flow through usage event; 0 when caching disabled.
+    let cacheCreationInputTokens = 0
+    let cacheReadInputTokens = 0
     let stopReason: StopReason = "end_turn"
     /** Per-content-block accumulators for tool_use input JSON fragments. */
     const toolBlocks = new Map<number, { id: string; name: string; jsonAcc: string }>()
@@ -129,6 +132,10 @@ export class ClaudeAdapter implements ModelAdapter {
         switch (ev.type) {
           case "message_start":
             inputTokens = ev.message?.usage?.input_tokens ?? 0
+            cacheCreationInputTokens =
+              ev.message?.usage?.cache_creation_input_tokens ?? 0
+            cacheReadInputTokens =
+              ev.message?.usage?.cache_read_input_tokens ?? 0
             break
 
           case "content_block_start":
@@ -178,12 +185,24 @@ export class ClaudeAdapter implements ModelAdapter {
         }
       }
     } catch (err) {
-      yield { type: "usage", inputTokens, outputTokens }
+      yield {
+        type: "usage",
+        inputTokens,
+        outputTokens,
+        cacheCreationInputTokens,
+        cacheReadInputTokens,
+      }
       yield this.errorDone(err)
       return
     }
 
-    yield { type: "usage", inputTokens, outputTokens }
+    yield {
+      type: "usage",
+      inputTokens,
+      outputTokens,
+      cacheCreationInputTokens,
+      cacheReadInputTokens,
+    }
     yield { type: "done", stopReason }
   }
 
