@@ -117,10 +117,40 @@ export async function POST(request: Request) {
     }
   );
 
+  // D-026 — first-message-of-project triggers the Planner. The Planner
+  // produces /docs/plan.md + the structured spec; the user reviews +
+  // edits in the plan pane; clicking "Start build" then fires `agent/run`.
+  //
+  // We detect "first message" by querying the existing plan for the
+  // project. If none, we go through plan/run; otherwise we go straight
+  // to agent/run as before.
+  const existingPlan = await convex.query(api.specs.getPlan, { projectId });
+  const isFirstMessage = !existingPlan;
+
+  if (isFirstMessage) {
+    // Plan path. The placeholder assistant message gets filled in by the
+    // plan/run completion step.
+    const event = await inngest.send({
+      name: "plan/run",
+      data: {
+        messageId: assistantMessageId,
+        conversationId: conversationId as Id<"conversations">,
+        projectId,
+        userId,
+        userPrompt: message,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      mode: "planning",
+      eventId: event.ids[0],
+      messageId: assistantMessageId,
+    });
+  }
+
   // D-018, Article XIX migration — emit `agent/run` (handled by the
   // new agent-loop with E2B sandbox lifecycle + run_command + streaming).
-  // The legacy `message/sent` listener (`processMessage`) remains
-  // registered for in-flight events but is no longer the active path.
   const event = await inngest.send({
     name: "agent/run",
     data: {
@@ -133,6 +163,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
+    mode: "agent",
     eventId: event.ids[0],
     messageId: assistantMessageId,
   });
