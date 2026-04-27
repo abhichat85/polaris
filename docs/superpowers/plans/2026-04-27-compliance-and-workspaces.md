@@ -2,6 +2,27 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Status (last updated 2026-04-27 — second session)
+
+**Closed in-session (commit on `main`):**
+- ✅ Phase 1.1 partial — `edit_file` tool wired into `code-agent.ts` registry + handler returns `EDIT_NOT_FOUND` / `EDIT_NOT_UNIQUE` / `BINARY_FILE` / `PATH_NOT_FOUND` errors. `run_command` deliberately NOT wired yet (no per-project sandbox lifecycle); removed from system prompt to stop the model hallucinating calls.
+- ✅ Phase 2.4 — Vercel AI SDK stripped from `/api/suggestion` and `/api/quick-edit`. Both now use raw `@anthropic-ai/sdk` with JSON-coaxed structured output. (Packages still in `package.json` — drop in a follow-up.)
+- ✅ Phase 5 partial — `Untrusted input boundary` rule added to system prompt; generic "My apologies" fallback in `process-message.ts` replaced with contextual error containing the actual model error.
+- ✅ Convex `convex:dev` / `convex:deploy` scripts added to `package.json`.
+
+**Attempted but blocked this session:**
+- ⛔ 5 parallel subagents dispatched for `edit_file`, Vercel AI SDK strip, GPT/Gemini tests, plans table, system-prompt hardening. **4 hit org monthly usage limit; 1 hit sandbox permission denial.** Recovered the high-value items by completing them in-session as listed above.
+
+**Still deferred (need separate sessions):**
+- Phase 1.2 — E2B `SandboxProvider` already implemented in `src/lib/sandbox/e2b-provider.ts`; what's missing is the per-project sandbox **lifecycle** (provision on first agent run, persist `sandboxId` on the project, reprovision on `SandboxDeadError`). Touches `agent-loop.ts`, `process-message.ts`, schema (sandboxId field).
+- Phase 1.3 — `run_command` tool (now safe to add since `forbidden-commands.ts` exists) + streaming output to chat (Convex `messages.toolCalls[].stream[]` + `ToolOutputStream` UI component).
+- Phase 2.1–2.3 — `plans` table + `assertWithinQuota` + Stripe webhook from scratch.
+- Phase 3 — GPT + Gemini adapter unit tests + 5 E2E specs.
+- Phase 4 — Workspaces multi-tenancy (full).
+- Phase 5 — Plan tier badge + usage meter + Sentry alerts + drop unused npm packages.
+
+---
+
 **Goal:** Drive Polaris from ~65% to 100% Constitutional compliance and add workspaces multi-tenancy as a first-class data model.
 
 **Architecture:** Each Phase below is a self-contained subagent session. Phases 1–3 close the audit's critical gaps (E2B, run_command, edit_file, plans/quotas, Stripe, gitleaks, tests). Phase 4 introduces the `workspaces` table as a foreign-key migration over `projects` plus the membership model. Phase 5 is the cosmetic finish: surface plan tier in the rail, render workspace switcher.

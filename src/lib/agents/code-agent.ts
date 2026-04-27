@@ -128,12 +128,44 @@ const tools: Anthropic.Tool[] = [
             required: ["query"],
         },
     },
+    {
+        name: "edit_file",
+        description:
+            "Apply a surgical edit by replacing an exact substring. The search string MUST appear exactly once in the file unless replace_all is true. Always read the file first so you can craft a unique search string. This is the preferred tool for changing existing files — far cheaper and safer than write_file.",
+        input_schema: {
+            type: "object" as const,
+            properties: {
+                path: {
+                    type: "string",
+                    description: "The file path relative to project root",
+                },
+                search: {
+                    type: "string",
+                    description:
+                        "The exact substring to find. Include enough surrounding context (1-2 lines above/below) to make it unique.",
+                },
+                replace: {
+                    type: "string",
+                    description: "The replacement substring",
+                },
+                replace_all: {
+                    type: "boolean",
+                    description:
+                        "If true, replace every occurrence. Default false (must match exactly once).",
+                },
+            },
+            required: ["path", "search", "replace"],
+        },
+    },
 ];
 
 interface ToolInput {
     path?: string;
     content?: string;
     query?: string;
+    search?: string;
+    replace?: string;
+    replace_all?: boolean;
 }
 
 /**
@@ -302,6 +334,65 @@ async function executeToolCall(
                         file: m.name,
                         snippet: m.snippet,
                     })),
+                },
+            };
+        }
+
+        case "edit_file": {
+            const path = toolInput.path!;
+            const search = toolInput.search!;
+            const replace = toolInput.replace ?? "";
+            const replaceAll = toolInput.replace_all ?? false;
+
+            const file = await convex.query(api.system.findFileByPath, {
+                internalKey,
+                projectId,
+                path,
+            });
+            if (!file) {
+                return { result: { error: `PATH_NOT_FOUND: ${path}` } };
+            }
+            if (file.content === undefined || file.content === null) {
+                return { result: { error: `BINARY_FILE: ${path} cannot be edited` } };
+            }
+
+            const original = file.content;
+            const occurrences = original.split(search).length - 1;
+            if (occurrences === 0) {
+                return {
+                    result: {
+                        error: `EDIT_NOT_FOUND: search string not present in ${path}. Re-read the file and craft a search string that appears exactly once.`,
+                    },
+                };
+            }
+            if (occurrences > 1 && !replaceAll) {
+                return {
+                    result: {
+                        error: `EDIT_NOT_UNIQUE: search string matches ${occurrences} times in ${path}. Add more surrounding context to make it unique, or set replace_all=true.`,
+                    },
+                };
+            }
+
+            const next = replaceAll
+                ? original.split(search).join(replace)
+                : original.replace(search, replace);
+
+            await convex.mutation(api.system.updateFileContent, {
+                internalKey,
+                fileId: file._id,
+                content: next,
+            });
+
+            return {
+                result: {
+                    success: true,
+                    message: `Edited ${path} (${occurrences} replacement${occurrences === 1 ? "" : "s"})`,
+                },
+                fileOperation: {
+                    type: "update",
+                    path,
+                    fileId: file._id,
+                    content: next,
                 },
             };
         }

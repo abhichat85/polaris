@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "convex:dev": "convex dev",
+    "convex:deploy": "convex deploy",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

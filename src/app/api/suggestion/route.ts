@@ -1,15 +1,21 @@
-import { generateText, Output } from "ai";
+/**
+ * /api/suggestion — inline code completion at the cursor.
+ *
+ * Authority: Constitution D-007 — no Vercel AI SDK. Uses the raw
+ * `@anthropic-ai/sdk` directly. Structured output is enforced by asking
+ * Claude to return strict JSON and parsing with the existing Zod schema.
+ */
+
+import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { anthropic } from "@ai-sdk/anthropic";
-// import { google } from "@ai-sdk/google";
 
 const suggestionSchema = z.object({
   suggestion: z
     .string()
     .describe(
-      "The code to insert at cursor, or empty string if no completion needed"
+      "The code to insert at cursor, or empty string if no completion needed",
     ),
 });
 
@@ -41,17 +47,19 @@ Follow these steps IN ORDER:
 3. Only if steps 1 and 2 don't apply: suggest what should be typed at the cursor position, using context from full_code.
 
 Your suggestion is inserted immediately after the cursor, so never suggest code that's already in the file.
+
+Respond with ONLY a JSON object on a single line, no prose, no markdown fence:
+{"suggestion": "<your code or empty string>"}
 </instructions>`;
+
+const anthropic = new Anthropic();
 
 export async function POST(request: Request) {
   try {
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 403 },
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
     const {
@@ -68,7 +76,7 @@ export async function POST(request: Request) {
     if (!code) {
       return NextResponse.json(
         { error: "Code is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -82,13 +90,39 @@ export async function POST(request: Request) {
       .replace("{nextLines}", nextLines || "")
       .replace("{lineNumber}", lineNumber.toString());
 
-    const { output } = await generateText({
-      model: anthropic("claude-3-7-sonnet-20250219"),
-      output: Output.object({ schema: suggestionSchema }),
-      prompt,
+    const response = await anthropic.messages.create({
+      model: "claude-3-7-sonnet-20250219",
+      max_tokens: 512,
+      messages: [{ role: "user", content: prompt }],
     });
 
-    return NextResponse.json({ suggestion: output.suggestion })
+    // Extract first text block (Anthropic returns a content array).
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") {
+      return NextResponse.json({ suggestion: "" });
+    }
+
+    // Strip any accidental markdown fences and parse JSON.
+    const raw = textBlock.text
+      .trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/```$/i, "")
+      .trim();
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // Model returned bare text — treat as the suggestion itself.
+      return NextResponse.json({ suggestion: raw });
+    }
+
+    const result = suggestionSchema.safeParse(parsed);
+    if (!result.success) {
+      return NextResponse.json({ suggestion: "" });
+    }
+
+    return NextResponse.json({ suggestion: result.data.suggestion });
   } catch (error) {
     console.error("Suggestion error: ", error);
     return NextResponse.json(

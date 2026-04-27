@@ -26,14 +26,24 @@ export const processMessage = inngest.createFunction(
       const { messageId } = event.data.event.data as MessageEvent;
       const internalKey = process.env.POLARIS_CONVEX_INTERNAL_KEY;
 
-      // Update the message with error content
+      // Constitution §2.6 — surface honest, contextual failure messages.
+      // The Inngest failure envelope wraps the original error on
+      // `event.data.error`; pass it through with a name so the user can
+      // decide whether to retry or reword.
+      const rawError = (event.data as { error?: unknown }).error;
+      const errorMessage =
+        rawError instanceof Error
+          ? rawError.message
+          : typeof rawError === "string"
+            ? rawError
+            : "unknown error";
+
       if (internalKey) {
         await step.run("update-message-on-failure", async () => {
           await convex.mutation(api.system.updateMessageContent, {
             internalKey,
             messageId,
-            content:
-              "My apologies, I encountered an error while processing your request. Let me know if you need anything else!",
+            content: `Model request failed: ${errorMessage}. Please try again or rephrase the request.`,
           });
         });
       }
