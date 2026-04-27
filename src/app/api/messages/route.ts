@@ -33,9 +33,32 @@ export async function POST(request: Request) {
   const body = await request.json();
   const { conversationId, message } = requestSchema.parse(body);
 
-  // §13.4 — per-user rate limit (per-tier multiplier). Burst protection
-  // before we hit the Convex quota gate.
-  const customer = await convex.query(api.customers.getByUser, { userId });
+  // PERF — these four pre-flight reads have no inter-dependencies,
+  // so we fan them out in parallel. On a cold Convex dev deployment
+  // each round-trip can be ~1s; the previous sequential layout
+  // accumulated to >10s and tripped the client ky timeout.
+  // Order in original code was customer → quota → conversation → in-flight;
+  // here we parallelize and preserve the same set of failure responses.
+  const [customer, quota, conversation, inFlight] = await Promise.all([
+    convex.query(api.customers.getByUser, { userId }),
+    convex.query(api.plans.assertWithinQuotaInternal, {
+      internalKey,
+      userId,
+      op: "agent_run",
+    }),
+    convex.query(api.system.getConversationById, {
+      internalKey,
+      conversationId: conversationId as Id<"conversations">,
+    }),
+    convex.query(api.system.getProcessingMessageInConversation, {
+      internalKey,
+      conversationId: conversationId as Id<"conversations">,
+    }),
+  ]);
+
+  // §13.4 — burst protection. Rate-limit check uses customer.plan;
+  // sequential because it depends on `customer` above. Upstash REST is
+  // fast (<100ms typical) so this single trip is cheap.
   const blocked = await rateLimitOr429({
     userId,
     bucket: "agentRun",
@@ -43,13 +66,7 @@ export async function POST(request: Request) {
   });
   if (blocked) return blocked;
 
-  // Constitution §17 — pre-operation quota check. Returns 429 + machine-readable
-  // payload so the client toast can show "Upgrade to Pro" with actual numbers.
-  const quota = await convex.query(api.plans.assertWithinQuotaInternal, {
-    internalKey,
-    userId,
-    op: "agent_run",
-  });
+  // Constitution §17 — quota gate.
   if (!quota.ok) {
     return NextResponse.json(
       {
@@ -63,27 +80,16 @@ export async function POST(request: Request) {
     );
   }
 
-  // Call convex mutation, query
-  const conversation = await convex.query(api.system.getConversationById, {
-    internalKey,
-    conversationId: conversationId as Id<"conversations">,
-  });
-
   if (!conversation) {
     return NextResponse.json(
       { error: "Conversation not found" },
-      { status: 404 }
+      { status: 404 },
     );
   }
 
   const projectId = conversation.projectId;
 
-  // Constitution §10 — only one in-flight message per conversation. The
-  // client is expected to call /api/messages/cancel before re-submitting.
-  const inFlight = await convex.query(
-    api.system.getProcessingMessageInConversation,
-    { internalKey, conversationId: conversationId as Id<"conversations"> },
-  );
+  // Constitution §10 — only one in-flight message per conversation.
   if (inFlight) {
     return NextResponse.json(
       {
@@ -95,36 +101,34 @@ export async function POST(request: Request) {
     );
   }
 
-  // Create user message
-  await convex.mutation(api.system.createMessage, {
-    internalKey,
-    conversationId: conversationId as Id<"conversations">,
-    projectId,
-    role: "user",
-    content: message,
-  });
-
-  // Create assistant message placeholder with processing status
-  const assistantMessageId = await convex.mutation(
-    api.system.createMessage,
-    {
+  // PERF — three independent writes/reads we can fan out:
+  //   1. Insert the user message (write)
+  //   2. Insert the assistant placeholder (write)
+  //   3. Check for an existing plan (read) → drives plan/run vs agent/run
+  // Convex serialises mutations to the same documents internally, so this
+  // is safe; we just save 2× round-trip latency.
+  const [, assistantMessageId, existingPlan] = await Promise.all([
+    convex.mutation(api.system.createMessage, {
+      internalKey,
+      conversationId: conversationId as Id<"conversations">,
+      projectId,
+      role: "user",
+      content: message,
+    }),
+    convex.mutation(api.system.createMessage, {
       internalKey,
       conversationId: conversationId as Id<"conversations">,
       projectId,
       role: "assistant",
       content: "",
       status: "processing",
-    }
-  );
+    }),
+    // D-026 — first-message-of-project triggers the Planner. The Planner
+    // produces /docs/plan.md + the structured spec; the user reviews +
+    // edits in the plan pane; clicking "Start build" then fires `agent/run`.
+    convex.query(api.specs.getPlan, { projectId }),
+  ]);
 
-  // D-026 — first-message-of-project triggers the Planner. The Planner
-  // produces /docs/plan.md + the structured spec; the user reviews +
-  // edits in the plan pane; clicking "Start build" then fires `agent/run`.
-  //
-  // We detect "first message" by querying the existing plan for the
-  // project. If none, we go through plan/run; otherwise we go straight
-  // to agent/run as before.
-  const existingPlan = await convex.query(api.specs.getPlan, { projectId });
   const isFirstMessage = !existingPlan;
 
   if (isFirstMessage) {

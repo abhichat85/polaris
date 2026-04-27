@@ -39,7 +39,7 @@ import {
   colors,
   uniqueNamesGenerator,
 } from "unique-names-generator";
-import ky from "ky";
+import { polarisKy as ky } from "@/lib/http/polaris-ky";
 import { toast } from "sonner";
 
 import { Kbd } from "@/components/ui/kbd";

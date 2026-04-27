@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Github, Loader2, UploadCloud } from "lucide-react";
-import ky from "ky";
+import { polarisKy as ky } from "@/lib/http/polaris-ky";
 import { toast } from "sonner";
 
 import {
