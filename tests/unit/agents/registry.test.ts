@@ -2,35 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { GPTAdapter } from "@/lib/agents/gpt-adapter"
 import { GeminiAdapter } from "@/lib/agents/gemini-adapter"
 
-describe("GPTAdapter (v1 stub)", () => {
+describe("GPTAdapter — registry-level smoke", () => {
   it("name is 'gpt'", () => {
     expect(new GPTAdapter({ apiKey: "fake" }).name).toBe("gpt")
   })
-
-  it("runWithTools throws not-implemented (wired but not exposed in v1)", async () => {
-    const adapter = new GPTAdapter({ apiKey: "fake" })
-    const gen = adapter.runWithTools(
-      [{ role: "user", content: "hi" }],
-      [],
-      { systemPrompt: "x", maxTokens: 10, timeoutMs: 1000 },
-    )
-    await expect(gen.next()).rejects.toThrow(/not implemented/i)
-  })
 })
 
-describe("GeminiAdapter (v1 stub)", () => {
+describe("GeminiAdapter — registry-level smoke", () => {
   it("name is 'gemini'", () => {
     expect(new GeminiAdapter({ apiKey: "fake" }).name).toBe("gemini")
-  })
-
-  it("runWithTools throws not-implemented", async () => {
-    const adapter = new GeminiAdapter({ apiKey: "fake" })
-    const gen = adapter.runWithTools(
-      [{ role: "user", content: "hi" }],
-      [],
-      { systemPrompt: "x", maxTokens: 10, timeoutMs: 1000 },
-    )
-    await expect(gen.next()).rejects.toThrow(/not implemented/i)
   })
 })
 
