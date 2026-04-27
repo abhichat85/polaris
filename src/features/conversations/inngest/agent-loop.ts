@@ -29,6 +29,7 @@ import { ConvexFileService } from "@/lib/files/convex-file-service"
 import { getAdapter } from "@/lib/agents/registry"
 import { MockSandboxProvider } from "@/lib/sandbox/mock-provider"
 import { ToolExecutor } from "@/lib/tools/executor"
+import { api } from "../../../../convex/_generated/api"
 
 interface AgentRunEvent {
   messageId: string
@@ -63,6 +64,19 @@ export const agentLoop = inngest.createFunction(
       )
     }
     const convex = new ConvexHttpClient(convexUrl)
+
+    // Constitution §17 — pre-loop quota check. NonRetriableError so Inngest
+    // doesn't burn retries on a quota wall.
+    const quota = await convex.query(api.plans.assertWithinQuotaInternal, {
+      internalKey,
+      userId: data.userId,
+      op: "agent_run",
+    })
+    if (!quota.ok) {
+      throw new NonRetriableError(
+        `Quota exceeded (${quota.reason}: ${quota.current}/${quota.limit}). Upgrade at /pricing.`,
+      )
+    }
 
     // Sub-plan 02 will swap this for the real E2BSandboxProvider singleton.
     // Until then, scaffolds and edits run against an in-memory mock so the

@@ -21,6 +21,7 @@ import { SignOutButton, useUser } from "@clerk/nextjs";
 import {
   ArrowLeftIcon,
   BellIcon,
+  Building2Icon,
   CheckIcon,
   CreditCardIcon,
   Loader2Icon,
@@ -39,8 +40,12 @@ import {
   useCurrentCustomer,
   useUpdatePreferences,
 } from "../hooks/use-settings";
+import {
+  useCurrentWorkspace,
+  useWorkspaceMembers,
+} from "@/features/workspaces/hooks/use-workspaces";
 
-type SectionId = "profile" | "preferences" | "billing" | "danger";
+type SectionId = "profile" | "workspace" | "preferences" | "billing" | "danger";
 
 const SECTIONS: {
   id: SectionId;
@@ -48,6 +53,7 @@ const SECTIONS: {
   icon: React.ElementType;
 }[] = [
   { id: "profile", label: "Profile", icon: UserIcon },
+  { id: "workspace", label: "Workspace", icon: Building2Icon },
   { id: "preferences", label: "Preferences", icon: BellIcon },
   { id: "billing", label: "Billing", icon: CreditCardIcon },
   { id: "danger", label: "Danger zone", icon: ShieldIcon },
@@ -157,6 +163,15 @@ export const SettingsView = () => {
                 Manage on Clerk
               </Button>
             </div>
+          </Section>
+
+          {/* Workspace */}
+          <Section
+            id="workspace"
+            title="Workspace"
+            hint="Members and access. Workspace owners can invite admins and members."
+          >
+            <WorkspacePane />
           </Section>
 
           {/* Preferences */}
@@ -437,6 +452,102 @@ const StatusBadge = ({
       {tone === "active" && <CheckIcon className="size-2.5" />}
       {children}
     </span>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Workspace pane
+// ---------------------------------------------------------------------------
+
+const WorkspacePane = () => {
+  const workspace = useCurrentWorkspace();
+  const members = useWorkspaceMembers(workspace?._id ?? null);
+
+  if (workspace === undefined) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2Icon className="size-3.5 animate-spin" />
+        Loading workspace…
+      </div>
+    );
+  }
+
+  if (workspace === null) {
+    return (
+      <div className="text-xs text-muted-foreground">
+        You don&apos;t have a workspace yet. Run the migration:{" "}
+        <code className="font-mono text-foreground/80">
+          npx convex run migrations/create_personal_workspaces:run
+        </code>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div className="min-w-0">
+          <div className="font-heading text-base font-medium tracking-[-0.01em] text-foreground">
+            {workspace.name}
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            slug: <span className="font-mono">{workspace.slug}</span> · plan:{" "}
+            <span className="uppercase tracking-wide">{workspace.plan}</span>
+          </div>
+        </div>
+        <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md bg-surface-3 text-muted-foreground">
+          {(members?.length ?? 0)} member{members?.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {members === undefined ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3.5 animate-spin" />
+          Loading members…
+        </div>
+      ) : (
+        <div className="flex flex-col rounded-md bg-surface-3 overflow-hidden">
+          {members.map((m, i) => (
+            <div
+              key={m._id}
+              className={cn(
+                "flex items-center justify-between px-3 py-2",
+                i > 0 && "[box-shadow:inset_0_1px_0_hsl(var(--surface-4))]",
+              )}
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground truncate font-mono">
+                  {m.userId}
+                </div>
+                <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+                  Joined {new Date(m.joinedAt).toLocaleDateString()}
+                </div>
+              </div>
+              <span
+                className={cn(
+                  "text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md",
+                  m.role === "owner"
+                    ? "bg-primary/10 text-primary"
+                    : m.role === "admin"
+                      ? "bg-info/15 text-info"
+                      : "bg-surface-4 text-muted-foreground",
+                )}
+              >
+                {m.role}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+        Member invitation flow ships in a follow-up. Until then, owners can
+        invite via Convex CLI:{" "}
+        <code className="font-mono text-foreground/80">
+          npx convex run workspaces:invite &lsquo;{`{...}`}&rsquo;
+        </code>
+      </p>
+    </div>
   );
 };
 

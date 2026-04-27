@@ -27,6 +27,7 @@ import type * as system from "../system.js";
 import type * as usage from "../usage.js";
 import type * as user_profiles from "../user_profiles.js";
 import type * as waitlist from "../waitlist.js";
+import type * as webhook_events from "../webhook_events.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   usage: typeof usage;
   user_profiles: typeof user_profiles;
   waitlist: typeof waitlist;
+  webhook_events: typeof webhook_events;
   workspaces: typeof workspaces;
 }>;
 

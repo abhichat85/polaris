@@ -17,11 +17,25 @@ export const exportToGitHub = inngest.createFunction(
     { id: "export-to-github" },
     { event: "project/export" },
     async ({ event, step }) => {
-        const { projectId, accessToken, repoName, isPrivate } = event.data as ExportEvent;
+        const { projectId, userId, accessToken, repoName, isPrivate } = event.data as ExportEvent;
         const internalKey = process.env.POLARIS_CONVEX_INTERNAL_KEY;
 
         if (!internalKey) {
             throw new NonRetriableError("POLARIS_CONVEX_INTERNAL_KEY is not configured");
+        }
+
+        // Constitution §17 — pre-export deploy quota check.
+        const quota = await step.run("check-deploy-quota", async () => {
+            return await convex.query(api.plans.assertWithinQuotaInternal, {
+                internalKey,
+                userId,
+                op: "deploy",
+            });
+        });
+        if (!quota.ok) {
+            throw new NonRetriableError(
+                `Deploy quota exceeded (${quota.reason}: ${quota.current}/${quota.limit}). Upgrade at /pricing.`,
+            );
         }
 
         const gh = new GitHubClient(accessToken);

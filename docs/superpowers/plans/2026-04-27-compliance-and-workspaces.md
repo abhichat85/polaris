@@ -2,7 +2,24 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-## Status (last updated 2026-04-27 — third session)
+## Status (last updated 2026-04-27 — fourth session)
+
+**Closed this session (in addition to prior sessions):**
+- ✅ **Phase 2.2** — `assertWithinQuota` wired at three entry points: `/api/messages` (returns 429 with `{reason, limit, current, upgradeUrl}`), `agent-loop.ts` Inngest entry (NonRetriableError on block), `github-export.ts` (deploy quota gate). Added `assertWithinQuotaInternal` (public query gated on `internalKey`) so HTTP/Inngest callers can reach it without piping Clerk auth.
+- ✅ **Phase 2.3** — Stripe webhook handler at `/api/billing/webhook/route.ts` (full): signature verification via `STRIPE_WEBHOOK_SECRET`, raw-body read, idempotency via existing `webhook_events` table + new `convex/webhook_events.ts` query/mutation, 4 event types (`checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`), plan resolution via Stripe `price.lookup_key`, userId resolution via `client_reference_id` → `customers.getByStripeCustomer` fallback. Returns 500 on handler error so Stripe retries; never marks-processed on failure.
+- ✅ **Phase 4 UI partial** — `WorkspaceSwitcher` Praxiom §7.8 dropdown in the IDE rail (initial-tile trigger, members list with role chips, "Create workspace" + "Manage members" entries, dialog for create). New "Workspace" section in Settings with member list, plan badge, slug, and the manual invite hint until the invite dialog ships.
+- ✅ **Phase 3b scaffolds** — All 5 E2E specs from §16.3 created as `test.fixme` files with documented preconditions: prompt-to-preview, chat-modify, github-import, deploy, quota-blocks-free-user. They appear in `pnpm exec playwright test --list` and will be ungated as their prerequisites land.
+- ✅ Settings runtime error fixed — Convex functions pushed via `npx convex dev --once`; `user_profiles:getCurrent` now resolves at runtime.
+
+**Required user action after pulling:**
+1. `pnpm convex:dev` (one-time) — schema + new function deploy.
+2. `npx convex run plans:seedDefaults` — seed 3 plan rows (idempotent).
+3. `npx convex run migrations/create_personal_workspaces:run` — workspaces backfill (idempotent).
+4. `STRIPE_WEBHOOK_SECRET=whsec_xxx` in `.env.local` — webhook signature verification (only required when Stripe webhooks are configured against this deployment).
+
+---
+
+## Status (third session)
 
 **Closed across sessions (on `main`):**
 - ✅ **Phase 1.1** — `edit_file` tool wired (`code-agent.ts` registry + handler with full error vocabulary).

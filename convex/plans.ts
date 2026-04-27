@@ -16,6 +16,18 @@ import { v } from "convex/values"
 import { internalMutation, query } from "./_generated/server"
 import { verifyAuth } from "./auth"
 
+// Internal-key gate — matches the pattern used throughout convex/system.ts.
+// Server-side callers (API routes, Inngest functions) pass POLARIS_CONVEX_INTERNAL_KEY.
+const requireInternalKey = (key: string) => {
+  const expected = process.env.POLARIS_CONVEX_INTERNAL_KEY
+  if (!expected) {
+    throw new Error("POLARIS_CONVEX_INTERNAL_KEY is not configured")
+  }
+  if (key !== expected) {
+    throw new Error("Invalid internal key")
+  }
+}
+
 const planLiteral = v.union(
   v.literal("free"),
   v.literal("pro"),
@@ -192,6 +204,97 @@ export const assertWithinQuota = query({
     }
 
     // project_create — count owned projects.
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect()
+    const current = projects.length
+    if (current >= plan.projectsAllowed) {
+      return {
+        ok: false as const,
+        reason: "projects",
+        limit: plan.projectsAllowed,
+        current,
+      }
+    }
+    return { ok: true as const }
+  },
+})
+
+// ---------------------------------------------------------------------------
+// Server-side variant — same logic, internalKey-gated, takes userId arg.
+// API routes + Inngest functions use this since they don't pipe Clerk auth
+// through the Convex client. Pattern matches `convex/system.ts` — exposed as
+// public `query` so HTTP-client callers can reach it; the internalKey arg
+// is the security boundary.
+// ---------------------------------------------------------------------------
+export const assertWithinQuotaInternal = query({
+  args: {
+    internalKey: v.string(),
+    userId: v.string(),
+    op: opLiteral,
+  },
+  handler: async (ctx, { internalKey, userId, op }) => {
+    requireInternalKey(internalKey)
+
+    const customer = await ctx.db
+      .query("customers")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique()
+    const planId = customer?.plan ?? "free"
+
+    const plan = await ctx.db
+      .query("plans")
+      .withIndex("by_plan_id", (q) => q.eq("id", planId))
+      .first()
+    if (!plan) {
+      throw new Error(
+        `Plan "${planId}" not seeded. Run \`npx convex run plans:seedDefaults\` once.`,
+      )
+    }
+
+    const now = Date.now()
+
+    if (op === "agent_run") {
+      const ym = yearMonthUtc(now)
+      const usageRow = await ctx.db
+        .query("usage")
+        .withIndex("by_owner_month", (q) =>
+          q.eq("ownerId", userId).eq("yearMonth", ym),
+        )
+        .first()
+      const current = usageRow?.anthropicTokens ?? 0
+      if (current >= plan.monthlyTokenLimit) {
+        return {
+          ok: false as const,
+          reason: "monthly_tokens",
+          limit: plan.monthlyTokenLimit,
+          current,
+        }
+      }
+      return { ok: true as const }
+    }
+
+    if (op === "deploy") {
+      const ym = yearMonthUtc(now)
+      const usageRow = await ctx.db
+        .query("usage")
+        .withIndex("by_owner_month", (q) =>
+          q.eq("ownerId", userId).eq("yearMonth", ym),
+        )
+        .first()
+      const current = usageRow?.deployments ?? 0
+      if (current >= plan.deploysAllowedPerMonth) {
+        return {
+          ok: false as const,
+          reason: "monthly_deploys",
+          limit: plan.deploysAllowedPerMonth,
+          current,
+        }
+      }
+      return { ok: true as const }
+    }
+
     const projects = await ctx.db
       .query("projects")
       .withIndex("by_owner", (q) => q.eq("ownerId", userId))

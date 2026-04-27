@@ -32,6 +32,26 @@ export async function POST(request: Request) {
   const body = await request.json();
   const { conversationId, message } = requestSchema.parse(body);
 
+  // Constitution §17 — pre-operation quota check. Returns 429 + machine-readable
+  // payload so the client toast can show "Upgrade to Pro" with actual numbers.
+  const quota = await convex.query(api.plans.assertWithinQuotaInternal, {
+    internalKey,
+    userId,
+    op: "agent_run",
+  });
+  if (!quota.ok) {
+    return NextResponse.json(
+      {
+        error: "quota_exceeded",
+        reason: quota.reason,
+        limit: quota.limit,
+        current: quota.current,
+        upgradeUrl: "/pricing",
+      },
+      { status: 429 },
+    );
+  }
+
   // Call convex mutation, query
   const conversation = await convex.query(api.system.getConversationById, {
     internalKey,

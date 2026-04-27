@@ -27,6 +27,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { WorkspaceSwitcher } from "@/features/workspaces/components/workspace-switcher";
 
 interface RailButtonProps {
   icon: React.ElementType;
@@ -110,6 +111,9 @@ export const IdeRail = ({
         className="opacity-90 group-hover:opacity-100 transition-opacity"
       />
     </Link>
+
+    {/* Praxiom §7.8 — workspace switcher (D-020) */}
+    <WorkspaceSwitcher />
 
     <div className="h-px bg-surface-3 mx-2 my-1.5" />
 
