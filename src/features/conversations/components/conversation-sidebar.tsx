@@ -43,6 +43,8 @@ import {
   useCreateConversation,
   useMessages,
 } from "../hooks/use-conversations";
+import { useMutation } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 
 import { ConversationsDialog } from "./conversations-dialog";
 
@@ -64,6 +66,8 @@ export const ConversationSidebar = ({
   const [isConversationsDialogOpen, setIsConversationsDialogOpen] = useState(false);
 
   const createConversation = useCreateConversation();
+  // D-033 — steering hook
+  const steerMessage = useMutation(api.steering.enqueue);
   const conversations = useConversations(projectId);
 
   const activeConversationId =
@@ -115,6 +119,23 @@ export const ConversationSidebar = ({
     // If processing and no new message, this is just a stop function
     if (isProcessing && !message.text) {
       await handleCancel();
+      setInput("");
+      return;
+    }
+
+    // D-033 — mid-run steering. If the agent is processing AND the user
+    // has typed a follow-up, enqueue it as a steer instead of starting
+    // a new message. AgentRunner picks it up between iterations.
+    if (isProcessing && message.text && processingMessage) {
+      try {
+        await steerMessage({
+          messageId: processingMessage._id,
+          text: message.text,
+        });
+        toast.success("Steering queued — agent picks it up next iteration");
+      } catch {
+        toast.error("Could not queue steer");
+      }
       setInput("");
       return;
     }
