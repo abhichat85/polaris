@@ -1,18 +1,60 @@
 import { v } from "convex/values";
 
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type QueryCtx } from "./_generated/server";
 import { verifyAuth } from "./auth";
+import type { Doc, Id } from "./_generated/dataModel";
+
+/**
+ * D-020 — resolve the workspaceId scope for a request:
+ *   - explicit `workspaceId` arg wins (caller chose); validate membership
+ *   - else fall back to the user's "current" workspace (first owned, else
+ *     first member-of). May return null for legacy users with no workspace
+ *     yet — in that case we silently fall back to ownerId-only filtering.
+ */
+async function resolveScope(
+  ctx: QueryCtx,
+  userId: string,
+  explicit: Id<"workspaces"> | undefined,
+): Promise<{ workspaceId: Id<"workspaces"> | null }> {
+  if (explicit) {
+    const member = await ctx.db
+      .query("workspace_members")
+      .withIndex("by_user_workspace", (q) =>
+        q.eq("userId", userId).eq("workspaceId", explicit),
+      )
+      .first()
+    if (!member) throw new Error("Not a member of this workspace")
+    return { workspaceId: explicit }
+  }
+  // Default: first-owned, else first membership.
+  const owned = await ctx.db
+    .query("workspaces")
+    .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+    .first()
+  if (owned) return { workspaceId: owned._id }
+  const membership = await ctx.db
+    .query("workspace_members")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first()
+  return { workspaceId: membership?.workspaceId ?? null }
+}
 
 export const create = mutation({
   args: {
     name: v.string(),
+    /** D-020 — optional workspaceId; defaults to caller's current workspace. */
+    workspaceId: v.optional(v.id("workspaces")),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Id<"projects">> => {
     const identity = await verifyAuth(ctx);
+    // resolveScope re-uses QueryCtx-shape methods — db.query is available
+    // on MutationCtx as well, so the cast is safe.
+    const scope = await resolveScope(ctx as unknown as QueryCtx, identity.subject, args.workspaceId);
 
     const projectId = await ctx.db.insert("projects", {
       name: args.name,
       ownerId: identity.subject,
+      ...(scope.workspaceId && { workspaceId: scope.workspaceId }),
       updatedAt: Date.now(),
     });
 
@@ -23,10 +65,23 @@ export const create = mutation({
 export const getPartial = query({
   args: {
     limit: v.number(),
+    /** D-020 — when supplied, filter to that workspace. */
+    workspaceId: v.optional(v.id("workspaces")),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Doc<"projects">[]> => {
     const identity = await verifyAuth(ctx);
+    const scope = await resolveScope(ctx, identity.subject, args.workspaceId);
 
+    if (scope.workspaceId) {
+      // Scoped path — return all projects in the workspace the user can access.
+      const all = await ctx.db
+        .query("projects")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", scope.workspaceId!))
+        .order("desc")
+        .take(args.limit);
+      return all;
+    }
+    // Legacy fallback — unscoped users still see their owned projects.
     return await ctx.db
       .query("projects")
       .withIndex("by_owner", (q) => q.eq("ownerId", identity.subject))
@@ -36,10 +91,20 @@ export const getPartial = query({
 });
 
 export const get = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    workspaceId: v.optional(v.id("workspaces")),
+  },
+  handler: async (ctx, args): Promise<Doc<"projects">[]> => {
     const identity = await verifyAuth(ctx);
+    const scope = await resolveScope(ctx, identity.subject, args.workspaceId);
 
+    if (scope.workspaceId) {
+      return await ctx.db
+        .query("projects")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", scope.workspaceId!))
+        .order("desc")
+        .collect();
+    }
     return await ctx.db
       .query("projects")
       .withIndex("by_owner", (q) => q.eq("ownerId", identity.subject))

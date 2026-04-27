@@ -11,6 +11,10 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { rateLimitOr429 } from "@/lib/rate-limit/middleware";
+import { convex } from "@/lib/convex-client";
+import { api } from "../../../../convex/_generated/api";
+
 const suggestionSchema = z.object({
   suggestion: z
     .string()
@@ -61,6 +65,15 @@ export async function POST(request: Request) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
+
+    // §13.4 — burst limit on autocompletion. Suggestion ≠ agentRun bucket.
+    const customer = await convex.query(api.customers.getByUser, { userId });
+    const blocked = await rateLimitOr429({
+      userId,
+      bucket: "httpGlobal",
+      plan: customer?.plan ?? "free",
+    });
+    if (blocked) return blocked;
 
     const {
       fileName,

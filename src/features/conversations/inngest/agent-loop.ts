@@ -32,6 +32,7 @@ import {
   SandboxDeadError,
 } from "@/lib/sandbox"
 import { ToolExecutor } from "@/lib/tools/executor"
+import { withSpan } from "@/lib/observability/spans"
 import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
 
@@ -100,7 +101,12 @@ export const agentLoop = inngest.createFunction(
       if (existing && existing.alive && existing.expiresAt > now) {
         return existing.sandboxId
       }
-      const handle = await sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS })
+      const handle = await withSpan(
+        "sandbox.boot",
+        `provision sandbox for ${projectId}`,
+        () => sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS }),
+        { projectId, provider: sandbox.name },
+      )
       await convex.mutation(api.sandboxes.setForProject, {
         internalKey,
         projectId,

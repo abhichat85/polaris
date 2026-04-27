@@ -16,6 +16,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
 import { firecrawl } from "@/lib/firecrawl";
+import { rateLimitOr429 } from "@/lib/rate-limit/middleware";
+import { convex } from "@/lib/convex-client";
+import { api } from "../../../../convex/_generated/api";
 
 const quickEditSchema = z.object({
   editedCode: z
@@ -64,6 +67,16 @@ export async function POST(request: Request) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 400 });
     }
+
+    // §13.4 — quick-edit shares the global HTTP bucket; per-tier multiplier
+    // applied via plan from customers row.
+    const customer = await convex.query(api.customers.getByUser, { userId });
+    const blocked = await rateLimitOr429({
+      userId,
+      bucket: "httpGlobal",
+      plan: customer?.plan ?? "free",
+    });
+    if (blocked) return blocked;
 
     if (!selectedCode) {
       return NextResponse.json(

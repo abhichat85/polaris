@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 
 import { inngest } from "@/inngest/client";
 import { convex } from "@/lib/convex-client";
+import { rateLimitOr429 } from "@/lib/rate-limit/middleware";
 
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -31,6 +32,16 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const { conversationId, message } = requestSchema.parse(body);
+
+  // §13.4 — per-user rate limit (per-tier multiplier). Burst protection
+  // before we hit the Convex quota gate.
+  const customer = await convex.query(api.customers.getByUser, { userId });
+  const blocked = await rateLimitOr429({
+    userId,
+    bucket: "agentRun",
+    plan: customer?.plan ?? "free",
+  });
+  if (blocked) return blocked;
 
   // Constitution §17 — pre-operation quota check. Returns 429 + machine-readable
   // payload so the client toast can show "Upgrade to Pro" with actual numbers.
