@@ -36,9 +36,53 @@ import type {
   ToolCall,
 } from "./types"
 
-export const MAX_ITERATIONS = 50
-export const MAX_TOKENS = 150_000
-export const MAX_DURATION_MS = 5 * 60_000
+/**
+ * D-025 — Run budgets are tier-aware. The original 5min/50it/150K cap was
+ * a one-size-fits-all that timed out on legitimate Pro/Team workloads
+ * (e.g. "build a full ecommerce site"). Each tier now has its own ceiling:
+ *
+ *   free  →  5min /  50 iter / 150K tokens
+ *   pro   → 30min / 100 iter / 300K tokens
+ *   team  →  2hr  / 200 iter / 600K tokens
+ *
+ * The agent loop reads the caller's plan via `customers.getByUser` and
+ * passes the resolved budget into `AgentRunner`. Free-tier callers still
+ * get today's behavior — no regression.
+ */
+export type Plan = "free" | "pro" | "team"
+
+export interface RunBudget {
+  maxIterations: number
+  maxTokens: number
+  maxDurationMs: number
+}
+
+const FREE_BUDGET: RunBudget = {
+  maxIterations: 50,
+  maxTokens: 150_000,
+  maxDurationMs: 5 * 60_000,
+}
+const PRO_BUDGET: RunBudget = {
+  maxIterations: 100,
+  maxTokens: 300_000,
+  maxDurationMs: 30 * 60_000,
+}
+const TEAM_BUDGET: RunBudget = {
+  maxIterations: 200,
+  maxTokens: 600_000,
+  maxDurationMs: 2 * 60 * 60_000,
+}
+
+export function runBudget(plan: Plan): RunBudget {
+  if (plan === "team") return TEAM_BUDGET
+  if (plan === "pro") return PRO_BUDGET
+  return FREE_BUDGET
+}
+
+// Back-compat exports — existing callers/tests reference these directly.
+export const MAX_ITERATIONS = FREE_BUDGET.maxIterations
+export const MAX_TOKENS = FREE_BUDGET.maxTokens
+export const MAX_DURATION_MS = FREE_BUDGET.maxDurationMs
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_000
 const DEFAULT_TURN_TIMEOUT_MS = 60_000
@@ -49,6 +93,12 @@ export interface AgentRunnerDeps {
   sink: AgentSink
   /** Sandbox to run tool calls against. May be null in dev/no-sandbox mode. */
   sandboxId: string | null
+  /**
+   * D-025 — Tier-aware run budget. Caller passes the resolved budget for
+   * the user's plan. Defaults to FREE for callers that haven't been
+   * updated yet (no behaviour regression).
+   */
+  budget?: RunBudget
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -74,17 +124,35 @@ export class AgentRunner {
   async run(input: AgentRunInput): Promise<void> {
     const startedAt = (this.deps.now ?? Date.now)()
     const state = await this.initState(input)
+    // D-025 — resolve budget; legacy callers get FREE.
+    const budget = this.deps.budget ?? FREE_BUDGET
 
     while (true) {
-      // ── Layer 4: hard limits ───────────────────────────────────────────────
-      if (state.iterationCount >= MAX_ITERATIONS) {
-        return this.markDone(input, state, "error", "Agent reached iteration limit (50). Latest changes are saved.")
+      // ── Layer 4: hard limits (tier-aware per D-025) ────────────────────────
+      if (state.iterationCount >= budget.maxIterations) {
+        return this.markDone(
+          input,
+          state,
+          "error",
+          `Agent reached iteration limit (${budget.maxIterations}). Latest changes are saved.`,
+        )
       }
-      if (state.totalInputTokens + state.totalOutputTokens >= MAX_TOKENS) {
-        return this.markDone(input, state, "error", "Context limit reached (150K tokens). Start a new conversation to continue.")
+      if (state.totalInputTokens + state.totalOutputTokens >= budget.maxTokens) {
+        return this.markDone(
+          input,
+          state,
+          "error",
+          `Context limit reached (${budget.maxTokens.toLocaleString()} tokens). Start a new conversation to continue.`,
+        )
       }
-      if ((this.deps.now ?? Date.now)() - startedAt >= MAX_DURATION_MS) {
-        return this.markDone(input, state, "error", "Agent timed out at 5 minutes. Latest changes are saved.")
+      if ((this.deps.now ?? Date.now)() - startedAt >= budget.maxDurationMs) {
+        const minutes = Math.round(budget.maxDurationMs / 60_000)
+        return this.markDone(
+          input,
+          state,
+          "error",
+          `Agent timed out at ${minutes} minutes. Latest changes are saved.`,
+        )
       }
 
       // Cancellation check — stop cleanly between iterations.
