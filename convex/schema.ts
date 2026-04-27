@@ -198,6 +198,12 @@ export default defineSchema({
     e2bSeconds: v.number(),
     deployments: v.number(),
     updatedAt: v.number(),
+    // D-023 — Anthropic prompt-cache accounting. Cache reads bill at ~10%
+    // of base input rate; we track them separately so cost reports are
+    // accurate. Both default to 0 for back-compat with rows written before
+    // caching landed.
+    cacheCreationTokens: v.optional(v.number()),
+    cacheReadTokens: v.optional(v.number()),
   }).index("by_owner_month", ["ownerId", "yearMonth"]),
 
   // ── Sandbox lifecycle (sub-plan 02) ──────────────────────────────────────

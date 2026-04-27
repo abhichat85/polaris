@@ -21,6 +21,9 @@ export const increment = mutation({
     anthropicTokens: v.optional(v.number()),
     e2bSeconds: v.optional(v.number()),
     deployments: v.optional(v.number()),
+    // D-023 — cache accounting. Optional; legacy callers don't pass these.
+    cacheCreationTokens: v.optional(v.number()),
+    cacheReadTokens: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const yearMonth = currentYearMonth()
@@ -35,6 +38,8 @@ export const increment = mutation({
       anthropicTokens: args.anthropicTokens ?? 0,
       e2bSeconds: args.e2bSeconds ?? 0,
       deployments: args.deployments ?? 0,
+      cacheCreationTokens: args.cacheCreationTokens ?? 0,
+      cacheReadTokens: args.cacheReadTokens ?? 0,
     }
 
     if (existing) {
@@ -42,6 +47,10 @@ export const increment = mutation({
         anthropicTokens: existing.anthropicTokens + delta.anthropicTokens,
         e2bSeconds: existing.e2bSeconds + delta.e2bSeconds,
         deployments: existing.deployments + delta.deployments,
+        cacheCreationTokens:
+          (existing.cacheCreationTokens ?? 0) + delta.cacheCreationTokens,
+        cacheReadTokens:
+          (existing.cacheReadTokens ?? 0) + delta.cacheReadTokens,
         updatedAt: Date.now(),
       })
     } else {
@@ -51,6 +60,8 @@ export const increment = mutation({
         anthropicTokens: delta.anthropicTokens,
         e2bSeconds: delta.e2bSeconds,
         deployments: delta.deployments,
+        cacheCreationTokens: delta.cacheCreationTokens,
+        cacheReadTokens: delta.cacheReadTokens,
         updatedAt: Date.now(),
       })
     }
