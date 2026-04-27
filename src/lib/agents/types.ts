@@ -75,7 +75,20 @@ export type StopReason = (typeof STOP_REASONS)[number]
 export type AgentStep =
   | { type: "text_delta"; delta: string }
   | { type: "tool_call"; toolCall: ToolCall }
-  | { type: "usage"; inputTokens: number; outputTokens: number }
+  | {
+      type: "usage"
+      inputTokens: number
+      outputTokens: number
+      // D-023 — Anthropic prompt caching reports cache reads/creates as
+      // separate token counts; we stream both so the billing layer can
+      // compute the discounted cost (cache reads are ~10× cheaper).
+      cacheCreationInputTokens?: number
+      cacheReadInputTokens?: number
+    }
+  // D-024 — extended thinking blocks streamed as their own events.
+  | { type: "thinking_start" }
+  | { type: "thinking_delta"; delta: string }
+  | { type: "thinking_end" }
   | { type: "done"; stopReason: StopReason; error?: string }
 
 export interface ModelAdapter {
