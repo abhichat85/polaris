@@ -1,5 +1,5 @@
 /**
- * The seven agent tools. Authority: CONSTITUTION.md Article VIII (D-017 amended).
+ * The eight agent tools. Authority: CONSTITUTION.md Article VIII (D-017, D-034 amended).
  *
  * Adding a new tool requires a Constitutional amendment (Article XXI) — do not
  * extend this list casually. Removing a tool also requires an amendment.
@@ -97,6 +97,37 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         directory: { type: "string", description: "POSIX directory path" },
       },
       required: ["directory"],
+    },
+  },
+  {
+    name: "search_code",
+    description:
+      "Search file contents in the project using ripgrep. Returns matching lines with file path, line number, and a short snippet. Prefer this over list_files+read_file when looking for symbol usages, imports, or text patterns.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Pattern to search for. Plain text by default; set regex=true for regex.",
+        },
+        pathGlob: {
+          type: "string",
+          description: "Optional glob to scope: e.g. 'src/**/*.tsx'. Default: whole project.",
+        },
+        regex: {
+          type: "boolean",
+          description: "Treat query as regex. Default false.",
+        },
+        caseSensitive: {
+          type: "boolean",
+          description: "Case sensitivity. Default false.",
+        },
+        maxResults: {
+          type: "integer",
+          description: "Cap on returned matches. Default 80, hard max 500.",
+        },
+      },
+      required: ["query"],
     },
   },
   {

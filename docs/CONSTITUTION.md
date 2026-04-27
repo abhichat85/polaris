@@ -2585,6 +2585,12 @@ Each scaffolded project ships with a 100-line `/AGENTS.md` table-of-contents poi
 
 ---
 
+### D-034: `search_code` Tool — ripgrep-backed Project Search (locked 2026-04-27)
+
+Added `search_code` as the eighth agent tool. ripgrep-backed text search across project files. Exit code 1 (no matches) treated as success. Returns matches as `{path, line, snippet}` rows; max 500 results, default cap 80, results past cap reported as `truncated`. Authority: tool contract §8; runbook `docs/runbooks/e2b-image-bake.md` for the ripgrep apt install. Replaces a class of `list_files`+`read_file` walks the agent previously had to do for symbol/import/pattern lookups.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?

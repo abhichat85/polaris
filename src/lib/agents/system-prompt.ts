@@ -31,6 +31,9 @@ contract notes that don't fit in tool descriptions:
 
 - **Read before editing.** Before \`edit_file\`, read the file so your
   search string is unique and current.
+- **Search before reading.** Before \`list_files\`+\`read_file\`, try \`search_code\`
+  for symbols, imports, or text patterns. It points you at the lines you actually
+  need, fewer round-trips and less context noise.
 - **Prefer surgical edits.** \`edit_file\` is cheaper than \`write_file\`.
   Reserve full rewrites for short files (<100 lines) or genuine rewrites.
 - **\`set_feature_status\`** marks plan features in_progress when you

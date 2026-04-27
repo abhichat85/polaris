@@ -16,6 +16,7 @@ import { applyEdit } from "./edit-file"
 import type { ToolCall } from "@/lib/agents/types"
 import { FORBIDDEN_COMMAND_PATTERNS } from "./definitions"
 import { FilePermissionPolicy } from "./file-permission-policy"
+import { searchCode, type SearchCodeArgs, type SearchCodeResult } from "./search-code"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -58,6 +59,8 @@ export class ToolExecutor {
           return await this.listFiles(toolCall.input as { directory: string }, ctx)
         case "run_command":
           return await this.runCommand(toolCall.input as RunInput, ctx)
+        case "search_code":
+          return await this.searchCode(toolCall.input as SearchCodeArgs, ctx)
         default:
           return {
             ok: false,
@@ -237,6 +240,39 @@ export class ToolExecutor {
     }
   }
 
+  private async searchCode(
+    input: SearchCodeArgs,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolOutput> {
+    if (!ctx.sandboxId) {
+      return {
+        ok: false,
+        error: "Sandbox not available — cannot run search_code.",
+        errorCode: "SANDBOX_DEAD",
+      }
+    }
+    try {
+      const result = await searchCode(input, {
+        exec: (cmd, opts) => this.deps.sandbox.exec(ctx.sandboxId!, cmd, opts ?? {}),
+        projectRoot: "/",
+      })
+      return {
+        ok: true,
+        data: {
+          matches: result.matches,
+          truncated: result.truncated,
+          formatted: formatMatches(result),
+        },
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   /** Returns a SANDBOX_DEAD ToolOutput on failure, or undefined on success / no sandbox. */
@@ -267,6 +303,14 @@ function locked(path: string): ToolOutput {
     error: `Path is locked or not writable: ${path}. Writable directories: src/, app/, pages/, public/, components/, lib/, supabase/migrations/, styles/.`,
     errorCode: "PATH_LOCKED",
   }
+}
+
+function formatMatches(r: SearchCodeResult): string {
+  const lines = r.matches.map((m) => `${m.path}:${m.line}: ${m.snippet}`)
+  if (r.truncated) {
+    lines.push(`... (truncated at ${r.matches.length})`)
+  }
+  return lines.join("\n")
 }
 
 function truncate(s: string): string {

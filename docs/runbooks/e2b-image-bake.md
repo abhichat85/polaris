@@ -41,6 +41,11 @@ EOF
 cat > e2b.Dockerfile <<'EOF'
 FROM e2bdev/code-interpreter:latest
 
+# ripgrep for the agent's search_code tool (D-034).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+
 # Playwright + Chromium for the agent's browser_* tools (D-029).
 # Pinned to a known-good version; bump deliberately.
 RUN npm install -g playwright@1.49.0 \
