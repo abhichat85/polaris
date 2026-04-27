@@ -474,6 +474,7 @@ describe("AgentRunner — D-036 verification loop", () => {
         m.content.includes("error TS2345"),
     )
     expect(synthetic).toBeDefined()
+    expect(synthetic!.content).toContain("attempt 1/3")
   })
 
   it("verifier fails 3 times → marks error with latest verifier output", async () => {

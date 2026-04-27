@@ -133,6 +133,48 @@ describe("verifier", () => {
     expect(cmd).toContain("tsc --noEmit")
   })
 
+  it("filters tsc errors correctly when paths contain parentheses (route groups)", async () => {
+    const stdout = [
+      "src/app/(app)/dashboard/page.tsx(12,5): error TS2345: bad",
+      "src/app/(marketing)/page.tsx(3,1): error TS2322: also bad",
+      "src/components/Card.tsx(1,1): error TS2345: ignored — not in changed",
+    ].join("\n")
+    const exec = vi.fn<ExecFn>(async (cmd) => ({
+      exitCode: cmd.includes("tsc") ? 1 : 0,
+      stdout: cmd.includes("tsc") ? stdout : "",
+      stderr: "",
+    }))
+    const result = await verify(
+      new Set([
+        "src/app/(app)/dashboard/page.tsx",
+        "src/app/(marketing)/page.tsx",
+      ]),
+      { exec },
+    )
+    expect(result.ok).toBe(false)
+    expect(result.stage).toBe("tsc")
+    expect(result.errors).toContain("src/app/(app)/dashboard/page.tsx")
+    expect(result.errors).toContain("src/app/(marketing)/page.tsx")
+    expect(result.errors).not.toContain("src/components/Card.tsx")
+  })
+
+  it("forwards cwd from deps to exec for tsc and eslint", async () => {
+    const exec = vi.fn<ExecFn>(async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    }))
+    await verify(new Set(["src/x.ts"]), { exec, cwd: "/proj" })
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining("tsc"),
+      expect.objectContaining({ cwd: "/proj" }),
+    )
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining("eslint"),
+      expect.objectContaining({ cwd: "/proj" }),
+    )
+  })
+
   it("eslint output truncation — ESLINT_MAX_LINES enforced", async () => {
     const lines = Array.from({ length: 500 }, (_, i) => `error line ${i}`)
     const { deps } = makeDeps(

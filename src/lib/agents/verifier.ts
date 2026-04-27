@@ -23,6 +23,12 @@ export interface VerifyDeps {
     cmd: string,
     opts?: { cwd?: string; timeoutMs?: number },
   ) => Promise<{ exitCode: number; stdout: string; stderr: string }>
+  /**
+   * Working directory for tsc + eslint. Optional — defaults to whatever
+   * `exec` picks (sandbox provider default). Set explicitly for sandbox
+   * configurations that don't put the project at the exec default.
+   */
+  cwd?: string
 }
 
 const TSC_TIMEOUT_MS = 60_000
@@ -42,7 +48,7 @@ export async function verify(
   // errors in untouched files.
   const tsRes = await deps.exec(
     "npx --no-install tsc --noEmit --pretty false",
-    { timeoutMs: TSC_TIMEOUT_MS },
+    { cwd: deps.cwd, timeoutMs: TSC_TIMEOUT_MS },
   )
   // tsc exits non-zero when there are errors; we don't fail on exec exit
   // code alone — we want to inspect stdout for the changed paths.
@@ -64,7 +70,7 @@ export async function verify(
   const args = lintable.map(shellQuote).join(" ")
   const lintRes = await deps.exec(
     `npx --no-install eslint --quiet --no-error-on-unmatched-pattern ${args}`,
-    { timeoutMs: ESLINT_TIMEOUT_MS },
+    { cwd: deps.cwd, timeoutMs: ESLINT_TIMEOUT_MS },
   )
   if (lintRes.exitCode !== 0) {
     const trimmed = trimLines(lintRes.stdout, ESLINT_MAX_LINES)
@@ -84,7 +90,11 @@ function filterTscOutput(
   // Filter to lines whose path prefix matches a changed path.
   const matched: string[] = []
   for (const line of raw.split("\n")) {
-    const m = line.match(/^([^(]+)\(\d+,\d+\):/)
+    // Greedy `.+` consumes as much path as possible, then backtracks just
+    // enough for `(\d+,\d+):` to match. This handles Next.js route-group
+    // paths like `src/app/(app)/dashboard/page.tsx` where the path itself
+    // contains parentheses.
+    const m = line.match(/^(.+)\((\d+),(\d+)\):/)
     if (!m) continue
     const path = m[1].trim()
     if (changedPaths.has(path)) matched.push(line)
