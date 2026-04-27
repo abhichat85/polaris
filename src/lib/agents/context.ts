@@ -12,7 +12,13 @@
  * real implementations against the same shape.
  */
 
-import type { ToolCall, ToolDefinition } from "./types"
+import type {
+  ContentBlock,
+  Message,
+  MessageRole,
+  ToolCall,
+  ToolDefinition,
+} from "./types"
 
 export type ContextRole = "system" | "user" | "assistant" | "tool"
 
@@ -70,6 +76,101 @@ export function parseContext(s: string): Context {
     throw new Error("parseContext: malformed JSON")
   }
   return parsed
+}
+
+/**
+ * D-032 — convert a Context to the Polaris `Message[]` shape used by
+ * `ModelAdapter.runWithTools`. This is the back-compat bridge: callers
+ * that already speak Context can hand a Context to an adapter; adapters
+ * that still consume Message[] keep working unchanged.
+ *
+ * `thinking` blocks are dropped at the boundary — Claude is the only
+ * provider today that round-trips them, and it does so via its own
+ * extended-thinking surface, not via Message[] history.
+ */
+export function contextToMessages(ctx: Context): Message[] {
+  return ctx.messages.map((m) => {
+    const role: MessageRole = m.role
+    if (typeof m.content === "string") {
+      return { role, content: m.content }
+    }
+    const blocks: ContentBlock[] = []
+    for (const b of m.content) {
+      switch (b.type) {
+        case "text":
+          blocks.push({ type: "text", text: b.text })
+          break
+        case "tool_use":
+          blocks.push({
+            type: "tool_use",
+            id: b.id,
+            name: b.name,
+            input:
+              b.input && typeof b.input === "object"
+                ? (b.input as Record<string, unknown>)
+                : {},
+          })
+          break
+        case "tool_result":
+          blocks.push({
+            type: "tool_result",
+            toolUseId: b.toolUseId,
+            content: b.content,
+            isError: b.isError,
+          })
+          break
+        case "thinking":
+          // Dropped — see comment above.
+          break
+      }
+    }
+    return { role, content: blocks }
+  })
+}
+
+/**
+ * D-032 — inverse of `contextToMessages`. Useful when an existing call
+ * site speaks Message[] but downstream code wants a Context.
+ *
+ * Caller supplies the surrounding `systemPrompt` + `tools` because
+ * those are not encoded in `Message[]` (Polaris messages are never
+ * `system`-roled — system prompt goes through RunOptions).
+ */
+export function messagesToContext(
+  messages: Message[],
+  systemPrompt: string,
+  tools: ToolDefinition[],
+): Context {
+  return {
+    systemPrompt,
+    tools,
+    messages: messages.map((m) => {
+      if (typeof m.content === "string") {
+        return { role: m.role, content: m.content }
+      }
+      const blocks: ContextBlock[] = m.content.map((b) => {
+        switch (b.type) {
+          case "text":
+            return { type: "text", text: b.text }
+          case "tool_use":
+            return {
+              type: "tool_use",
+              id: b.id,
+              name: b.name,
+              input: b.input,
+            }
+          case "tool_result":
+            return {
+              type: "tool_result",
+              toolUseId: b.toolUseId,
+              content: b.content,
+              isError: b.isError,
+            }
+        }
+      })
+      return { role: m.role, content: blocks }
+    }),
+  }
 }
 
 /**

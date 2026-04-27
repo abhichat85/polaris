@@ -25,6 +25,7 @@ import type {
   ToolDefinition,
 } from "./types"
 import { STOP_REASONS } from "./types"
+import { contextToMessages, type Context } from "./context"
 
 export interface ClaudeAdapterConfig {
   apiKey: string
@@ -69,6 +70,25 @@ export class ClaudeAdapter implements ModelAdapter {
       ((apiKey: string) => new Anthropic({ apiKey }) as unknown as MinimalAnthropicClient)
     this.client = factory(config.apiKey)
     this.model = config.model ?? DEFAULT_MODEL
+  }
+
+  /**
+   * D-032 — Context-shape entry point. Lets a caller speak the
+   * provider-agnostic `Context` directly without manually splitting it
+   * into `messages + systemPrompt + tools`. Internally delegates to
+   * `runWithTools` so the wire-format + caching behaviour is identical.
+   *
+   * The `Context.systemPrompt` and `Context.tools` win over anything
+   * passed in `opts` — they are part of the conversation state.
+   */
+  runWithContext(
+    ctx: Context,
+    opts: Omit<RunOptions, "systemPrompt"> & { systemPrompt?: string },
+  ): AsyncGenerator<AgentStep, void, void> {
+    return this.runWithTools(contextToMessages(ctx), ctx.tools, {
+      ...opts,
+      systemPrompt: ctx.systemPrompt ?? opts.systemPrompt ?? "",
+    })
   }
 
   async *runWithTools(

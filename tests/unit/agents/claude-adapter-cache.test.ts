@@ -133,6 +133,35 @@ describe("ClaudeAdapter — D-023 prompt caching", () => {
     })
   })
 
+  it("D-032 — runWithContext delegates with ctx.systemPrompt + ctx.tools", async () => {
+    mockMessages.stream.mockReturnValue(
+      fakeStream([
+        { type: "message_start", message: { usage: { input_tokens: 10 } } },
+        { type: "message_delta", usage: { output_tokens: 1 } },
+      ]),
+    )
+
+    const collected = await collect<AgentStep>(
+      adapter.runWithContext(
+        {
+          systemPrompt: "Ctx system.",
+          tools,
+          messages: [{ role: "user", content: "hi from ctx" }],
+        },
+        { maxTokens: 100, timeoutMs: 1000 },
+      ),
+    )
+
+    expect(collected.find((s) => s.type === "done")).toBeDefined()
+    const args = mockMessages.stream.mock.calls[0][0]
+    expect(args.system[0].text).toBe("Ctx system.")
+    // last tool gets the cache_control tag, exactly like runWithTools.
+    expect(args.tools[args.tools.length - 1].cache_control).toEqual({
+      type: "ephemeral",
+    })
+    expect(args.messages).toEqual([{ role: "user", content: "hi from ctx" }])
+  })
+
   it("emits zeros when provider doesn't return cache fields", async () => {
     mockMessages.stream.mockReturnValue(
       fakeStream([
