@@ -40,9 +40,18 @@ export interface MinimalAnthropicClient {
       model: string
       max_tokens: number
       temperature?: number
-      system?: string
+      // D-023 — system can be a plain string OR an array of content blocks
+      // (the latter shape supports `cache_control: { type: "ephemeral" }`).
+      system?: string | Array<{ type: "text"; text: string; cache_control?: { type: "ephemeral" } }>
       messages: Array<{ role: "user" | "assistant"; content: unknown }>
-      tools?: Array<{ name: string; description: string; input_schema: unknown }>
+      tools?: Array<{
+        name: string
+        description: string
+        input_schema: unknown
+        cache_control?: { type: "ephemeral" }
+      }>
+      // D-024 — extended thinking budget, off by default.
+      thinking?: { type: "enabled"; budget_tokens: number }
     }) => AsyncIterable<unknown>
   }
 }
@@ -68,10 +77,16 @@ export class ClaudeAdapter implements ModelAdapter {
     opts: RunOptions,
   ): AsyncGenerator<AgentStep, void, void> {
     const wireMessages = this.translateMessages(messages)
-    const wireTools = tools.map((t) => ({
+    // D-023 — Anthropic caches the entire `tools` block when the LAST tool
+    // carries `cache_control: ephemeral`. Tagging just the last entry
+    // keeps the cache-key stable across tool order changes upstream.
+    const wireTools = tools.map((t, i) => ({
       name: t.name,
       description: t.description,
       input_schema: t.inputSchema,
+      ...(i === tools.length - 1 && {
+        cache_control: { type: "ephemeral" as const },
+      }),
     }))
 
     let stream: AsyncIterable<unknown>
@@ -80,7 +95,17 @@ export class ClaudeAdapter implements ModelAdapter {
         model: this.model,
         max_tokens: opts.maxTokens,
         temperature: opts.temperature ?? 0.2,
-        system: opts.systemPrompt,
+        // D-023 — system prompt as a cached content block. A 30–60% input-
+        // token discount on conversations >2 turns is typical.
+        system: opts.systemPrompt
+          ? [
+              {
+                type: "text" as const,
+                text: opts.systemPrompt,
+                cache_control: { type: "ephemeral" as const },
+              },
+            ]
+          : undefined,
         messages: wireMessages,
         tools: wireTools.length > 0 ? wireTools : undefined,
       })
