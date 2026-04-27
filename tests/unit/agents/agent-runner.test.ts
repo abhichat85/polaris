@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { AgentRunner } from "@/lib/agents/agent-runner"
+import type { VerifyResult } from "@/lib/agents/verifier"
 import { InMemoryAgentSink } from "@/lib/agents/in-memory-sink"
 import { InMemoryFileService } from "@/lib/files/in-memory-file-service"
 import { MockSandboxProvider } from "@/lib/sandbox/mock-provider"
@@ -46,14 +47,25 @@ const baseInput = {
   resumeFromCheckpoint: false,
 }
 
-async function makeFixture(script: AgentStep[][]) {
+type VerifyFn = (paths: ReadonlySet<string>) => Promise<VerifyResult>
+
+async function makeFixture(
+  script: AgentStep[][],
+  opts?: { verify?: VerifyFn },
+) {
   const sink = new InMemoryAgentSink()
   const files = new InMemoryFileService()
   const sandbox = new MockSandboxProvider()
   const sb = await sandbox.create("nextjs-supabase", {})
   const adapter = new ScriptedAdapter(script)
   const executor = new ToolExecutor({ files, sandbox })
-  const runner = new AgentRunner({ adapter, executor, sink, sandboxId: sb.id })
+  const runner = new AgentRunner({
+    adapter,
+    executor,
+    sink,
+    sandboxId: sb.id,
+    verify: opts?.verify,
+  })
   // Seed an initial user message
   sink.initialMessages = [{ role: "user", content: "Build me a login page" }]
   return { sink, files, sandbox, sb, adapter, runner }
@@ -323,5 +335,214 @@ describe("AgentRunner — adapter errors", () => {
 
     expect(sink.done?.payload.status).toBe("error")
     expect(sink.done?.payload.errorMessage).toContain("anthropic 529")
+  })
+})
+
+describe("AgentRunner — D-036 verification loop", () => {
+  it("no verifier supplied → behavior unchanged (no regression)", async () => {
+    const { sink, runner } = await makeFixture([
+      [
+        { type: "text_delta", delta: "All done." },
+        { type: "usage", inputTokens: 5, outputTokens: 1 },
+        { type: "done", stopReason: "end_turn" },
+      ],
+    ])
+
+    await runner.run(baseInput)
+
+    expect(sink.done?.payload.status).toBe("completed")
+  })
+
+  it("verifier passes → marks completed, called once with changed path", async () => {
+    const seenPaths: string[] = []
+    const verify = vi.fn<VerifyFn>(async (paths) => {
+      seenPaths.push(...paths)
+      return { ok: true }
+    })
+    const { sink, runner, files } = await makeFixture(
+      [
+        // Turn 1: edit file
+        [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "t1",
+              name: "edit_file",
+              input: {
+                path: "src/x.ts",
+                search: "const x = 1",
+                replace: "const x = 2",
+              },
+            },
+          },
+          { type: "usage", inputTokens: 10, outputTokens: 5 },
+          { type: "done", stopReason: "tool_use" },
+        ],
+        // Turn 2: model says done — verification fires here
+        [
+          { type: "text_delta", delta: "Done." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+      ],
+      { verify },
+    )
+    await files.createPath("proj_1", "src/x.ts", "const x = 1", "user")
+
+    await runner.run(baseInput)
+
+    expect(verify).toHaveBeenCalledTimes(1)
+    expect(seenPaths).toContain("src/x.ts")
+    expect(sink.done?.payload.status).toBe("completed")
+  })
+
+  it("verifier fails once, agent fixes, completes — synthetic message injected", async () => {
+    const verify = vi
+      .fn<VerifyFn>()
+      .mockResolvedValueOnce({
+        ok: false,
+        stage: "tsc",
+        errors: "src/app/page.tsx(12,5): error TS2345: bad type",
+      })
+      .mockResolvedValueOnce({ ok: true })
+
+    const { sink, runner, files, adapter } = await makeFixture(
+      [
+        // Turn 1: first edit
+        [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "t1",
+              name: "edit_file",
+              input: {
+                path: "src/app/page.tsx",
+                search: "const x = 1",
+                replace: "const x = 2",
+              },
+            },
+          },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "tool_use" },
+        ],
+        // Turn 2: model claims done → verifier injects errors
+        [
+          { type: "text_delta", delta: "Done." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+        // Turn 3: model responds to synthetic, edits again
+        [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "t2",
+              name: "edit_file",
+              input: {
+                path: "src/app/page.tsx",
+                search: "const x = 2",
+                replace: "const x: number = 2",
+              },
+            },
+          },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "tool_use" },
+        ],
+        // Turn 4: model claims done, verifier passes
+        [
+          { type: "text_delta", delta: "Fixed." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+      ],
+      { verify },
+    )
+    await files.createPath("proj_1", "src/app/page.tsx", "const x = 1", "user")
+
+    await runner.run(baseInput)
+
+    expect(verify).toHaveBeenCalledTimes(2)
+    expect(sink.done?.payload.status).toBe("completed")
+
+    // Turn 3 input messages should contain the synthetic auto-verification user message.
+    const turn3Messages = adapter.receivedMessages[2]
+    const synthetic = turn3Messages.find(
+      (m) =>
+        m.role === "user" &&
+        typeof m.content === "string" &&
+        m.content.includes("Auto-verification") &&
+        m.content.includes("error TS2345"),
+    )
+    expect(synthetic).toBeDefined()
+  })
+
+  it("verifier fails 3 times → marks error with latest verifier output", async () => {
+    const verify = vi.fn<VerifyFn>(async () => ({
+      ok: false,
+      stage: "tsc",
+      errors: "src/x.ts(1,1): error TS9999: still broken",
+    }))
+
+    // Build 4 paired edit-then-done turn pairs (= 8 turns total)
+    const script: AgentStep[][] = []
+    for (let i = 0; i < 4; i++) {
+      script.push([
+        {
+          type: "tool_call",
+          toolCall: {
+            id: `t_${i}`,
+            name: "edit_file",
+            input: {
+              path: "src/x.ts",
+              search: i === 0 ? "x" : `x${i}`,
+              replace: `x${i + 1}`,
+            },
+          },
+        },
+        { type: "usage", inputTokens: 5, outputTokens: 2 },
+        { type: "done", stopReason: "tool_use" },
+      ])
+      script.push([
+        { type: "text_delta", delta: `done ${i}` },
+        { type: "usage", inputTokens: 5, outputTokens: 2 },
+        { type: "done", stopReason: "end_turn" },
+      ])
+    }
+
+    const { sink, runner, files } = await makeFixture(script, { verify })
+    await files.createPath("proj_1", "src/x.ts", "x", "user")
+
+    await runner.run(baseInput)
+
+    // 3 auto-fix attempts + 1 final → 4 verify calls; surface as error.
+    // (After the 4th call, autoFixCount has reached MAX, so we mark error.)
+    // Implementation triggers verify on every "no tool calls" iteration:
+    //   call 1 → fail (attempt 1/3, push synthetic)
+    //   call 2 → fail (attempt 2/3, push synthetic)
+    //   call 3 → fail (attempt 3/3, push synthetic)
+    //   call 4 → fail (autoFixCount === MAX → markDone error)
+    expect(verify.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(sink.done?.payload.status).toBe("error")
+    expect(sink.done?.payload.errorMessage).toContain("Auto-verification")
+    expect(sink.done?.payload.errorMessage).toContain("still broken")
+  })
+
+  it("no changed paths → verify NOT called", async () => {
+    const verify = vi.fn<VerifyFn>(async () => ({ ok: true }))
+    const { sink, runner } = await makeFixture(
+      [
+        [
+          { type: "text_delta", delta: "Nothing to change." },
+          { type: "usage", inputTokens: 5, outputTokens: 1 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+      ],
+      { verify },
+    )
+
+    await runner.run(baseInput)
+
+    expect(verify).not.toHaveBeenCalled()
+    expect(sink.done?.payload.status).toBe("completed")
   })
 })

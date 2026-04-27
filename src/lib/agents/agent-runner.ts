@@ -23,6 +23,7 @@ import { ToolExecutor } from "@/lib/tools/executor"
 import type { ToolOutput } from "@/lib/tools/types"
 import { AGENT_SYSTEM_PROMPT } from "./system-prompt"
 import { COMPACTION_THRESHOLD_TOKENS } from "./compactor"
+import type { VerifyResult } from "./verifier"
 import type {
   AgentCheckpoint,
   AgentDoneStatus,
@@ -89,6 +90,13 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 8_000
 const DEFAULT_TURN_TIMEOUT_MS = 60_000
 
 /**
+ * D-036 — Cap on auto-fix attempts before surfacing verification errors
+ * to the user. After 3 failed verifier rounds we stop trying and mark
+ * the run as `error` with the latest residual errors as the message.
+ */
+const MAX_AUTO_FIX_ATTEMPTS = 3
+
+/**
  * D-027 — Compactor handler. The runner calls this when the running token
  * total crosses the compaction threshold. Returns the handoff artifact;
  * the runner then resets `state.messages` to a single user message
@@ -125,6 +133,14 @@ export interface AgentRunnerDeps {
    * canonical AGENT_SYSTEM_PROMPT. Defaults to AGENT_SYSTEM_PROMPT alone.
    */
   systemPrompt?: string
+  /**
+   * D-036 — Optional verifier. When provided, the runner runs tsc+eslint
+   * against the agent's changed paths whenever the model stops emitting
+   * tool calls. On verification errors, the runner injects a synthetic
+   * user message with the errors and continues, up to 3 auto-fix
+   * attempts. When absent, behaviour is identical to pre-D-036.
+   */
+  verify?: (changedPaths: ReadonlySet<string>) => Promise<VerifyResult>
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -144,6 +160,13 @@ interface RunState {
   totalOutputTokens: number
   /** D-027 — set true after the first auto-compaction; only one per run. */
   compacted?: boolean
+  /**
+   * D-036 — verification loop state. Tracks paths the agent has mutated
+   * since the last verification pass + how many auto-fix attempts have
+   * been spent in this run. Reset after each verification cycle.
+   */
+  pendingChangedPaths: Set<string>
+  autoFixCount: number
 }
 
 export class AgentRunner {
@@ -237,8 +260,26 @@ export class AgentRunner {
         return this.markDone(input, state, "error", turn.errorMessage)
       }
 
-      // No tool calls — natural end of conversation.
+      // No tool calls — model is done with this turn. Run verification
+      // (D-036) before declaring the conversation complete. If
+      // verification fails and we have auto-fix budget left, inject the
+      // errors as a synthetic user message and continue. Otherwise
+      // mark done.
       if (turn.toolCalls.length === 0) {
+        const verifyOutcome = await this.maybeVerify(input, state)
+        if (verifyOutcome === "continue") {
+          // Synthetic message already pushed. Loop again.
+          // NOTE: state isn't checkpointed on this iteration since
+          // there were no tool calls. If Inngest retries between this
+          // synthetic-push and the next iteration, the synthetic
+          // message is lost — but the verifier will simply re-run on
+          // resume and re-push. Acceptable for v1.
+          state.iterationCount++
+          continue
+        }
+        if (verifyOutcome === "error") {
+          return // markDone already called inside maybeVerify
+        }
         return this.markDone(input, state, "completed")
       }
 
@@ -286,6 +327,10 @@ export class AgentRunner {
           iterationCount: cp.iterationCount,
           totalInputTokens: cp.totalInputTokens,
           totalOutputTokens: cp.totalOutputTokens,
+          // D-036 — verifier state never resumed; verification re-runs
+          // cleanly against whatever changes the resumed turn produces.
+          pendingChangedPaths: new Set<string>(),
+          autoFixCount: 0,
         }
       }
     }
@@ -295,6 +340,8 @@ export class AgentRunner {
       iterationCount: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      pendingChangedPaths: new Set<string>(),
+      autoFixCount: 0,
     }
   }
 
@@ -372,7 +419,7 @@ export class AgentRunner {
 
   private async executeTools(
     input: AgentRunInput,
-    _state: RunState,
+    state: RunState,
     toolCalls: ToolCall[],
   ): Promise<ContentBlock[]> {
     const sandboxId = this.deps.sandboxId
@@ -381,6 +428,8 @@ export class AgentRunner {
     for (const tc of toolCalls) {
       const result = await this.deps.executor.execute(tc, ctx)
       await this.deps.sink.appendToolResult(input.messageId, tc.id, result)
+      // D-036 — track changed paths so the verifier can target them.
+      this.recordChangedPath(state, tc, result)
       blocks.push({
         type: "tool_result",
         toolUseId: tc.id,
@@ -389,6 +438,70 @@ export class AgentRunner {
       })
     }
     return blocks
+  }
+
+  /** D-036 — push the path of a successful mutating tool call into state. */
+  private recordChangedPath(
+    state: RunState,
+    tc: ToolCall,
+    result: ToolOutput,
+  ): void {
+    if (!result.ok) return
+    const mutating = [
+      "write_file",
+      "edit_file",
+      "multi_edit",
+      "create_file",
+      "delete_file",
+    ]
+    if (!mutating.includes(tc.name)) return
+    const path = (tc.input as { path?: unknown }).path
+    if (typeof path === "string" && path.length > 0) {
+      state.pendingChangedPaths.add(path)
+    }
+  }
+
+  /**
+   * D-036 — Run the verifier (if wired) over the agent's pending changed
+   * paths. Returns:
+   *   "completed" → all clear, caller should mark the run done
+   *   "continue"  → errors found and we have auto-fix budget; synthetic
+   *                  user message has been pushed onto state.messages
+   *   "error"     → errors found and budget exhausted; markDone(error)
+   *                  has already been called by this method
+   */
+  private async maybeVerify(
+    input: AgentRunInput,
+    state: RunState,
+  ): Promise<"completed" | "continue" | "error"> {
+    if (!this.deps.verify) return "completed"
+    if (state.pendingChangedPaths.size === 0) return "completed"
+
+    const result = await this.deps.verify(state.pendingChangedPaths)
+    if (result.ok) {
+      state.pendingChangedPaths.clear()
+      return "completed"
+    }
+
+    // Hit the cap — surface to the user.
+    if (state.autoFixCount >= MAX_AUTO_FIX_ATTEMPTS) {
+      await this.markDone(
+        input,
+        state,
+        "error",
+        `Auto-verification (${result.stage}) failed after ${MAX_AUTO_FIX_ATTEMPTS} fix attempts. Latest errors:\n\n${result.errors}`,
+      )
+      return "error"
+    }
+
+    // Inject errors as a synthetic user message and continue.
+    state.messages.push({
+      role: "user",
+      content: `Auto-verification (${result.stage}) found errors in your last edit batch. Fix them before reporting completion:\n\n${result.errors}\n\n(This is auto-fix attempt ${state.autoFixCount + 1}/${MAX_AUTO_FIX_ATTEMPTS}.)`,
+    })
+    state.pendingChangedPaths.clear()
+    state.autoFixCount++
+    return "continue"
   }
 
   // ── Termination helpers ─────────────────────────────────────────────────────

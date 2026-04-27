@@ -2597,6 +2597,12 @@ Added `multi_edit` as the ninth agent tool. Applies an ordered array of search/r
 
 ---
 
+### D-036: Verification Loop Between Agent Turns (locked 2026-04-28)
+
+When the model stops emitting tool calls and there are pending changed paths, the runner runs `tsc --noEmit` (project-wide, output filtered to changed paths) and `eslint --quiet` on changed `.ts/.tsx/.js/.jsx` files. On errors, the runner pushes a synthetic user message with the formatted output and continues; up to 3 auto-fix attempts before surfacing as `markDone(error)`. The verifier is wired via the optional `AgentRunnerDeps.verify` dep — when absent, behaviour is identical to pre-D-036. Phase B.4 (build verification on completion claim) and B.5 (per-project verification settings) extend this. Authority: `src/lib/agents/verifier.ts`, sub-plan `2026-04-28-10x-output-quality.md` Phase B.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
@@ -2652,4 +2658,4 @@ It is not a finished document. It will change. Amend it deliberately. Never viol
 
 *Build Polaris correctly the first time, so we don't have to build it twice.*
 
-— Authors, 2026-04-26 (last amended 2026-04-27: D-026 plan mode, D-027 compaction, D-028 evaluator, D-029 browser tools, D-030 AGENTS.md, D-031 lints, D-032 Context shape, D-033 steering)
+— Authors, 2026-04-26 (last amended 2026-04-28: D-026 plan mode, D-027 compaction, D-028 evaluator, D-029 browser tools, D-030 AGENTS.md, D-031 lints, D-032 Context shape, D-033 steering, D-034 search_code, D-035 multi_edit, D-036 verification loop)
