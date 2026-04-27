@@ -17,6 +17,13 @@ import {
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
 import { getSandboxProvider } from "@/lib/sandbox";
 import { isForbiddenCommand } from "@/lib/sandbox/forbidden-commands";
+import {
+    browserNavigate,
+    browserScreenshot,
+    browserClick,
+    browserInspect,
+    type BrowserViewport,
+} from "./browser-tools";
 
 const truncateTail = (s: string, max = 4096): string =>
     s.length <= max ? s : `…(truncated)…\n${s.slice(-max)}`;
@@ -282,6 +289,9 @@ interface ToolInput {
     timeoutMs?: number;
     featureId?: string;
     status?: "todo" | "in_progress" | "done" | "blocked";
+    // D-029 — browser_* tool args
+    selector?: string;
+    viewport?: BrowserViewport;
 }
 
 /**
@@ -591,15 +601,63 @@ async function executeToolCall(
         case "browser_screenshot":
         case "browser_click":
         case "browser_inspect": {
-            // D-029 v1 — handlers gated on E2B image build. Return a clear
-            // error so the model adapts (it won't loop on the missing tool;
-            // it'll surface the gap to the user).
-            return {
-                result: {
-                    error:
-                        "BROWSER_NOT_AVAILABLE: the project sandbox doesn't have Playwright preinstalled yet. Phase 4 of the harness plan rebuilds the E2B image with playwright + chromium. Until then, verify behaviour via run_command (e.g. `npm run build`) and ask the user to confirm visual output.",
-                },
-            };
+            // D-029 — real handlers. The browser scripts gracefully detect
+            // a missing Playwright install and surface BROWSER_NOT_AVAILABLE
+            // so the agent adapts (asks user to verify visually). Once the
+            // operator bakes Playwright into the E2B image (see
+            // docs/runbooks/e2b-image-bake.md), all 4 tools work.
+            const sandboxRow = await convex.query(api.sandboxes.getByProject, {
+                internalKey,
+                projectId,
+            });
+            if (!sandboxRow || !sandboxRow.alive) {
+                return {
+                    result: {
+                        error: "SANDBOX_DEAD: no live sandbox; ask the user to retry.",
+                    },
+                };
+            }
+            const sandbox = getSandboxProvider();
+
+            try {
+                if (toolName === "browser_navigate") {
+                    const r = await browserNavigate(
+                        sandbox,
+                        sandboxRow.sandboxId,
+                        toolInput.path ?? "/",
+                    );
+                    return { result: r };
+                }
+                if (toolName === "browser_screenshot") {
+                    const r = await browserScreenshot(
+                        sandbox,
+                        sandboxRow.sandboxId,
+                        toolInput.viewport ?? "desktop",
+                    );
+                    return { result: r };
+                }
+                if (toolName === "browser_click") {
+                    const r = await browserClick(
+                        sandbox,
+                        sandboxRow.sandboxId,
+                        toolInput.selector!,
+                    );
+                    return { result: r };
+                }
+                // browser_inspect
+                const r = await browserInspect(
+                    sandbox,
+                    sandboxRow.sandboxId,
+                    toolInput.selector,
+                );
+                return { result: r };
+            } catch (err) {
+                return {
+                    result: {
+                        error: `BROWSER_FAILED: ${err instanceof Error ? err.message : "unknown"}`,
+                    },
+                };
+            }
         }
 
         case "set_feature_status": {
