@@ -130,6 +130,23 @@ export const agentLoop = inngest.createFunction(
     const executor = new ToolExecutor({ files, sandbox })
     const adapter = getAdapter("claude")
 
+    // D-030 — augment system prompt with the project's AGENTS.md if present.
+    // Best-effort: any error keeps the canonical prompt.
+    const systemPromptOverride = await (async () => {
+      try {
+        const agentsMd = await convex.query(api.system.findFileByPath, {
+          internalKey,
+          projectId,
+          path: "AGENTS.md",
+        })
+        if (!agentsMd?.content) return undefined
+        const { AGENT_SYSTEM_PROMPT } = await import("@/lib/agents/system-prompt")
+        return `${AGENT_SYSTEM_PROMPT}\n\n## Project map (from /AGENTS.md)\n\n${agentsMd.content}`
+      } catch {
+        return undefined
+      }
+    })()
+
     // Single-retry loop on SandboxDeadError. After one reprovision, escalate.
     let attempts = 0
     while (true) {
@@ -139,6 +156,7 @@ export const agentLoop = inngest.createFunction(
         sink,
         sandboxId,
         budget, // D-025
+        systemPrompt: systemPromptOverride, // D-030
       })
       try {
         await runner.run({

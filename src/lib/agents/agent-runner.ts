@@ -119,6 +119,12 @@ export interface AgentRunnerDeps {
    * absent, the existing behaviour (hard-fail at maxTokens) applies.
    */
   compact?: CompactFn
+  /**
+   * D-030 — optional system prompt override. agent-loop.ts builds this
+   * by appending the project's `/AGENTS.md` (if present) to the
+   * canonical AGENT_SYSTEM_PROMPT. Defaults to AGENT_SYSTEM_PROMPT alone.
+   */
+  systemPrompt?: string
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -297,7 +303,8 @@ export class AgentRunner {
     let errorMessage: string | undefined
 
     const stream = this.deps.adapter.runWithTools(state.messages, AGENT_TOOLS, {
-      systemPrompt: AGENT_SYSTEM_PROMPT,
+      // D-030 — agent-loop may augment the prompt with /AGENTS.md.
+      systemPrompt: this.deps.systemPrompt ?? AGENT_SYSTEM_PROMPT,
       maxTokens: DEFAULT_MAX_OUTPUT_TOKENS,
       timeoutMs: DEFAULT_TURN_TIMEOUT_MS,
     })
