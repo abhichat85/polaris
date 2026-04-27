@@ -2480,6 +2480,77 @@ Every architectural decision, its alternatives, and why we chose what we chose. 
 
 ---
 
+### D-023: Anthropic Prompt Caching on System + Tools (locked 2026-04-27)
+
+**Question:** Should every Anthropic call pay full input-token cost on the system prompt + tool definitions, or should we cache them?
+
+**Alternatives:**
+1. Status quo — pay full input-token cost every turn. Simplest, but the system prompt is ~2K tokens and the tool block is ~3K tokens, so every turn pays 5K input tokens for content that hasn't changed.
+2. Cache only the system prompt — saves 40% but ignores the larger tool block.
+3. **Cache the system prompt AND the entire tools block** by setting `cache_control: { type: "ephemeral" }` on the system content block + the LAST tool definition (Anthropic caches all tools when the last one is tagged).
+
+**Decision:** Option 3. `ClaudeAdapter.runWithTools` wraps the system prompt as a content block array `[{ type: "text", text, cache_control: { type: "ephemeral" } }]` and tags the last tool definition with `cache_control`. The streaming `message_start` event carries `cache_creation_input_tokens` + `cache_read_input_tokens` separately from `input_tokens`; we propagate both through `AgentStep.usage` and persist via `usage.cacheCreationTokens / cacheReadTokens`.
+
+**Rationale:**
+- 30–60% input-token cost reduction on conversations >2 turns. The agent loop already issues 5–15 turns per non-trivial task; the savings compound.
+- Cache reads bill at ~10% of base input rate (Anthropic's pricing). At our scale this is real money.
+- Putting `cache_control` on only the LAST tool keeps the cache key stable when upstream tool definitions are reordered or extended.
+
+**Reconsideration trigger:** If model pricing changes such that cache reads >50% of base input rate, revisit. Likewise if a future Anthropic SDK release changes the cache-control wire format.
+
+---
+
+### D-024: Stream Extended Thinking to the Chat (locked 2026-04-27)
+
+**Question:** Should Claude's extended-thinking blocks be hidden, summarised, or streamed live to the user?
+
+**Alternatives:**
+1. Hide thinking entirely — simplest UX, but loses the "show your work" affordance that builds user trust.
+2. Show a static "thought for N seconds" badge — light surface area but no insight into what the agent reasoned about.
+3. **Stream thinking deltas live into a collapsible block above the assistant message body.**
+
+**Decision:** Option 3. `AgentStep` gains `thinking_start | thinking_delta | thinking_end` event variants. The Anthropic stream emits `content_block_delta` with `delta.type === "thinking_delta"`; the adapter forwards them. The runner pipes deltas through `sink.appendThinking(messageId, delta)` (optional method on the AgentSink interface — defaults to no-op). Convex persists to `messages.thinking` (capped 32 KB). Chat UI renders a collapsed `<details>` block — Praxiom muted-foreground italic, JetBrains Mono.
+
+**Rationale:**
+- Surfaces the planning the model is doing without forcing the user to re-prompt for it.
+- Collapsed-by-default keeps the chat readable for users who don't care.
+- Capped persistence keeps individual messages from blowing up the Convex row size (32 KB is generous for thinking blocks; Anthropic typically returns <8 KB per turn).
+- The optional `appendThinking` method on AgentSink keeps `InMemoryAgentSink` (test seam) clean — it just no-ops.
+
+**Reconsideration trigger:** If extended thinking becomes expensive (separate billing), gate behind a paid tier. If users find the collapsed UX confusing, consider a banner-style "Thought for N seconds" chip instead.
+
+---
+
+### D-025: Tier-Aware Run Budgets (locked 2026-04-27)
+
+**Question:** What should `MAX_ITERATIONS` / `MAX_TOKENS` / `MAX_DURATION_MS` be, given that "free" and "team" workloads differ by 10× in scope?
+
+**Alternatives:**
+1. Status quo — 5min / 50 iter / 150K tokens for everyone. Cheap to enforce, but real Pro/Team workloads (e.g. "build an ecommerce site") routinely time out at 5min and Anthropic's article cites 6-hour single-agent runs as normal.
+2. Remove caps entirely — pi-mono's stance. Bad for a hosted product where unbounded loops burn user budget.
+3. **Per-plan caps via `runBudget(plan)`** returning `{ maxIterations, maxTokens, maxDurationMs }`.
+
+**Decision:** Option 3. The numbers:
+
+| Tier | Iterations | Tokens | Wall time |
+|---|---|---|---|
+| free | 50 | 150K | 5 min |
+| pro | 100 | 300K | 30 min |
+| team | 200 | 600K | 2 hr |
+
+`AgentRunner.deps` gains an optional `budget: RunBudget` field; legacy callers still get FREE caps (no regression). `agent-loop.ts` resolves the user's plan via `customers.getByUser` once, calls `runBudget(plan)`, passes the result to the runner.
+
+**Also fixes** the in-the-wild `TimeoutError: Request timed out: POST http://localhost:3000/api/messages` symptom — the user-side `ky` client used the SDK default of 10 seconds, which masked legitimate slow Convex round-trips on first dispatch. We now route through `polarisKy` with a 45-second timeout and `retry: 0` (POSTs are not idempotent on the client).
+
+**Rationale:**
+- Cost protection is preserved at the floor (free tier identical to today).
+- Pro/Team users actually need long-running agent loops; capping them at 5min was treating a paid product like a demo.
+- Each step is its own Inngest `step.run`, so the per-step duration limit (Inngest enforces ~30s default) is respected even on a 2hr total budget.
+
+**Reconsideration trigger:** If P95 of pro-tier wall time exceeds 25 min, the 30-min cap is biting; consider raising. If team-tier costs spike >$20/run on average, the 2hr cap is too generous; tighten.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
@@ -2535,4 +2606,4 @@ It is not a finished document. It will change. Amend it deliberately. Never viol
 
 *Build Polaris correctly the first time, so we don't have to build it twice.*
 
-— Authors, 2026-04-26 (last amended 2026-04-27: D-018 sandbox lifecycle, D-019 plans seeding, D-020 workspaces, D-021 Stripe webhook idempotency, D-022 assertWithinQuotaInternal pattern)
+— Authors, 2026-04-26 (last amended 2026-04-27: D-023 prompt caching, D-024 thinking events, D-025 tier-aware run budgets)
