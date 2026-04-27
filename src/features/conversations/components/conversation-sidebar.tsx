@@ -35,6 +35,7 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
+import { ThinkingBlock } from "@/components/ai-elements/thinking-block";
 
 import {
   useConversation,
@@ -229,6 +230,13 @@ export const ConversationSidebar = ({
                 from={message.role}
               >
                 <MessageContent>
+                  {/* D-024 — extended-thinking block above the message body */}
+                  {message.role === "assistant" && message.thinking && (
+                    <ThinkingBlock
+                      thinking={message.thinking}
+                      defaultOpen={message.status === "processing"}
+                    />
+                  )}
                   {message.status === "processing" ? (
                     <MessageProcessing
                       streamingContent={message.streamingContent}
