@@ -166,6 +166,32 @@ export const agentLoop = inngest.createFunction(
           userId: data.userId,
           resumeFromCheckpoint: attempt > 0 || attempts > 0, // Layer 3
         })
+        // D-028 — sprint-completion trigger. After the Generator returns
+        // cleanly, ask Convex if any sprint is fully done + un-evaluated.
+        // Tier-gate: only paid plans get the Evaluator (cost protection).
+        if (plan === "pro" || plan === "team") {
+          const sprintReady = await convex.query(
+            api.specs.findSprintReadyForEval,
+            { internalKey, projectId },
+          )
+          if (sprintReady !== null) {
+            await convex.mutation(api.specs.markSprintEvaluated, {
+              internalKey,
+              projectId,
+              sprint: sprintReady,
+            })
+            await inngest.send({
+              name: "eval/run",
+              data: {
+                projectId: data.projectId,
+                conversationId: data.conversationId,
+                sprint: sprintReady,
+                roundIndex: 0,
+                userId: data.userId,
+              },
+            })
+          }
+        }
         return
       } catch (err) {
         if (err instanceof SandboxDeadError && attempts === 0) {

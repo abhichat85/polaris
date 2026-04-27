@@ -321,6 +321,11 @@ export default defineSchema({
      * `serializePlan(parsePlan(md))` is the round-trip contract.
      */
     planMarkdown: v.optional(v.string()),
+    /**
+     * D-028 — sprint indices already evaluated. Prevents double-eval
+     * when the Generator nudges feature statuses post-grading.
+     */
+    evaluatedSprints: v.optional(v.array(v.number())),
     updatedAt: v.number(),
     updatedBy: v.union(
       v.literal("user"),

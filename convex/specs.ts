@@ -268,3 +268,64 @@ export const userUpdatePlan = mutation({
     return existing._id
   },
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D-028 — sprint-completion detection + eval-state tracking.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the sprint index (if any) that just became fully `done` AND
+ * has not yet been evaluated. Used by agent-loop after each runner.run
+ * to decide whether to fire eval/run.
+ *
+ * Returns null when no such sprint exists.
+ */
+export const findSprintReadyForEval = query({
+  args: { internalKey: v.string(), projectId: v.id("projects") },
+  handler: async (ctx, { internalKey, projectId }) => {
+    validateInternalKey(internalKey)
+    const spec = await ctx.db
+      .query("specs")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .first()
+    if (!spec || !spec.features?.length) return null
+
+    const evaluated = new Set(spec.evaluatedSprints ?? [])
+    // Group features by sprint.
+    const bySprint = new Map<number, typeof spec.features>()
+    for (const f of spec.features) {
+      const k = f.sprint ?? 0
+      if (!bySprint.has(k)) bySprint.set(k, [])
+      bySprint.get(k)!.push(f)
+    }
+    for (const [sprint, features] of bySprint.entries()) {
+      if (evaluated.has(sprint)) continue
+      const allDone = features.every((f) => f.status === "done")
+      if (allDone && features.length > 0) return sprint
+    }
+    return null
+  },
+})
+
+export const markSprintEvaluated = mutation({
+  args: {
+    internalKey: v.string(),
+    projectId: v.id("projects"),
+    sprint: v.number(),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey)
+    const spec = await ctx.db
+      .query("specs")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .first()
+    if (!spec) return
+    const existing = new Set(spec.evaluatedSprints ?? [])
+    if (existing.has(args.sprint)) return
+    existing.add(args.sprint)
+    await ctx.db.patch(spec._id, {
+      evaluatedSprints: Array.from(existing).sort((a, b) => a - b),
+      updatedAt: Date.now(),
+    })
+  },
+})
