@@ -52,8 +52,20 @@ export interface AgentSink {
   /** Persist a tool result. */
   appendToolResult(messageId: string, toolCallId: string, result: ToolOutput): Promise<void>
 
-  /** Record token usage (drives billing quota — sub-plan 08). */
-  recordUsage(userId: string, inputTokens: number, outputTokens: number): Promise<void>
+  /**
+   * Record token usage (drives billing quota — sub-plan 08).
+   *
+   * D-023 — `cacheCreationInputTokens` and `cacheReadInputTokens` are
+   * Anthropic prompt-cache breakdowns. Both are optional for back-compat
+   * with adapters that don't yet emit them.
+   */
+  recordUsage(
+    userId: string,
+    inputTokens: number,
+    outputTokens: number,
+    cacheCreationInputTokens?: number,
+    cacheReadInputTokens?: number,
+  ): Promise<void>
 
   /** Save a checkpoint snapshot. Called after each iteration. */
   saveCheckpoint(checkpoint: AgentCheckpoint): Promise<void>

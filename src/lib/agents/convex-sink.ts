@@ -77,10 +77,18 @@ export class ConvexAgentSink implements AgentSink {
     userId: string,
     inputTokens: number,
     outputTokens: number,
+    cacheCreationInputTokens?: number,
+    cacheReadInputTokens?: number,
   ): Promise<void> {
     await this.deps.convex.mutation(api.usage.increment, {
       ownerId: userId,
       anthropicTokens: inputTokens + outputTokens,
+      ...(cacheCreationInputTokens !== undefined && {
+        cacheCreationTokens: cacheCreationInputTokens,
+      }),
+      ...(cacheReadInputTokens !== undefined && {
+        cacheReadTokens: cacheReadInputTokens,
+      }),
     })
   }
 

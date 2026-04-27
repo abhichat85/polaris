@@ -74,7 +74,14 @@ describe("ClaudeAdapter", () => {
 
     const usageSteps = steps.filter((s) => s.type === "usage")
     expect(usageSteps).toHaveLength(1)
-    expect(usageSteps[0]).toEqual({ type: "usage", inputTokens: 5, outputTokens: 1 })
+    // D-023 — usage now also carries cache_creation/read counts (0 when caching unused).
+    expect(usageSteps[0]).toEqual({
+      type: "usage",
+      inputTokens: 5,
+      outputTokens: 1,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+    })
     // usage always immediately precedes done
     const usageIdx = steps.findIndex((s) => s.type === "usage")
     expect(steps[usageIdx + 1]?.type).toBe("done")

@@ -194,7 +194,23 @@ export class AgentRunner {
         case "usage":
           state.totalInputTokens += step.inputTokens
           state.totalOutputTokens += step.outputTokens
-          await this.deps.sink.recordUsage(input.userId, step.inputTokens, step.outputTokens)
+          // D-023 — pipe cache breakdown through to billing.
+          await this.deps.sink.recordUsage(
+            input.userId,
+            step.inputTokens,
+            step.outputTokens,
+            step.cacheCreationInputTokens,
+            step.cacheReadInputTokens,
+          )
+          break
+
+        // D-024 — extended thinking events pass through; the runner doesn't
+        // act on them (no checkpoint impact, no tool dispatch). The sink
+        // implementation is responsible for persisting if it cares.
+        case "thinking_start":
+        case "thinking_delta":
+        case "thinking_end":
+          // No-op at the runner level.
           break
 
         case "done":
