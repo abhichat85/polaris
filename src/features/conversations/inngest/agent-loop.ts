@@ -23,7 +23,7 @@
 import { ConvexHttpClient } from "convex/browser"
 import { NonRetriableError } from "inngest"
 import { inngest } from "@/inngest/client"
-import { AgentRunner } from "@/lib/agents/agent-runner"
+import { AgentRunner, runBudget } from "@/lib/agents/agent-runner"
 import { ConvexAgentSink } from "@/lib/agents/convex-sink"
 import { ConvexFileService } from "@/lib/files/convex-file-service"
 import { getAdapter } from "@/lib/agents/registry"
@@ -71,6 +71,13 @@ export const agentLoop = inngest.createFunction(
       )
     }
     const convex = new ConvexHttpClient(convexUrl)
+
+    // D-025 — resolve the user's plan once, use it for budget AND quota.
+    const customer = await convex.query(api.customers.getByUser, {
+      userId: data.userId,
+    })
+    const plan = (customer?.plan ?? "free") as "free" | "pro" | "team"
+    const budget = runBudget(plan)
 
     // Constitution §17 — pre-loop quota check. NonRetriableError so Inngest
     // doesn't burn retries on a quota wall.
@@ -131,6 +138,7 @@ export const agentLoop = inngest.createFunction(
         executor,
         sink,
         sandboxId,
+        budget, // D-025
       })
       try {
         await runner.run({
