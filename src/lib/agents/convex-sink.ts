@@ -49,6 +49,16 @@ export class ConvexAgentSink implements AgentSink {
     })
   }
 
+  // D-024 — extended-thinking fragments persisted via system.appendThinking.
+  // Capped at 32 KB per message inside the mutation.
+  async appendThinking(messageId: string, delta: string): Promise<void> {
+    await this.deps.convex.mutation(api.system.appendThinking, {
+      internalKey: this.deps.internalKey,
+      messageId: messageId as Id<"messages">,
+      delta,
+    })
+  }
+
   async appendToolCall(messageId: string, toolCall: ToolCall): Promise<void> {
     await this.deps.convex.mutation(api.agent_messages.appendToolCall, {
       internalKey: this.deps.internalKey,

@@ -204,13 +204,17 @@ export class AgentRunner {
           )
           break
 
-        // D-024 — extended thinking events pass through; the runner doesn't
-        // act on them (no checkpoint impact, no tool dispatch). The sink
-        // implementation is responsible for persisting if it cares.
+        // D-024 — extended thinking events. We persist deltas via the sink
+        // so the chat UI can render the collapsible "Thinking" block live.
+        // start/end carry no payload — we just route the delta.
         case "thinking_start":
+          break
         case "thinking_delta":
+          if (this.deps.sink.appendThinking) {
+            await this.deps.sink.appendThinking(input.messageId, step.delta)
+          }
+          break
         case "thinking_end":
-          // No-op at the runner level.
           break
 
         case "done":

@@ -46,6 +46,13 @@ export interface AgentSink {
   /** Append a streaming text delta to the assistant message. */
   appendText(messageId: string, delta: string): Promise<void>
 
+  /**
+   * D-024 — append a streaming extended-thinking fragment. Optional —
+   * sinks that don't care about thinking can no-op (default impl in
+   * InMemoryAgentSink does so).
+   */
+  appendThinking?(messageId: string, delta: string): Promise<void>
+
   /** Persist a tool call (so the UI can render the tool card). */
   appendToolCall(messageId: string, toolCall: ToolCall): Promise<void>
 
