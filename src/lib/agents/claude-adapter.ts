@@ -122,6 +122,9 @@ export class ClaudeAdapter implements ModelAdapter {
     let stopReason: StopReason = "end_turn"
     /** Per-content-block accumulators for tool_use input JSON fragments. */
     const toolBlocks = new Map<number, { id: string; name: string; jsonAcc: string }>()
+    // D-024 — track which content-block indexes are extended-thinking blocks
+    // so we can emit thinking_end on their content_block_stop events.
+    const thinkingBlocks = new Set<number>()
 
     try {
       for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
@@ -145,12 +148,21 @@ export class ClaudeAdapter implements ModelAdapter {
                 name: ev.content_block.name,
                 jsonAcc: "",
               })
+            } else if (ev.content_block?.type === "thinking") {
+              // D-024 — extended-thinking block opened.
+              thinkingBlocks.add(ev.index)
+              yield { type: "thinking_start" }
             }
             break
 
           case "content_block_delta":
             if (ev.delta?.type === "text_delta") {
               yield { type: "text_delta", delta: ev.delta.text }
+            } else if (ev.delta?.type === "thinking_delta") {
+              // D-024 — extended thinking text fragment.
+              if (typeof ev.delta.thinking === "string") {
+                yield { type: "thinking_delta", delta: ev.delta.thinking }
+              }
             } else if (ev.delta?.type === "input_json_delta") {
               const block = toolBlocks.get(ev.index)
               if (block) block.jsonAcc += ev.delta.partial_json
@@ -166,6 +178,10 @@ export class ClaudeAdapter implements ModelAdapter {
                 toolCall: { id: block.id, name: block.name, input },
               }
               toolBlocks.delete(ev.index)
+            }
+            if (thinkingBlocks.has(ev.index)) {
+              thinkingBlocks.delete(ev.index)
+              yield { type: "thinking_end" }
             }
             break
           }
