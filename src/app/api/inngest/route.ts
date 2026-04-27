@@ -5,6 +5,10 @@ import { processMessage } from "@/features/conversations/inngest/process-message
 import { agentLoop } from "@/features/conversations/inngest/agent-loop";
 import { planRun } from "@/features/conversations/inngest/plan";
 import { evalRun } from "@/features/conversations/inngest/eval";
+import {
+  docGarden,
+  docGardenScheduler,
+} from "@/features/conversations/inngest/doc-garden";
 import { exportToGitHub } from "@/features/projects/inngest/github-export";
 import { deployPipeline } from "@/features/deploy/inngest/deploy-pipeline";
 import { importRepo as githubImportRepo } from "@/features/github/inngest/import-repo";
@@ -17,6 +21,8 @@ export const { GET, POST, PUT } = serve({
     agentLoop,         // new — uses ModelAdapter + AgentRunner per sub-plan 01
     planRun,           // D-026 — Planner agent (plans-as-files)
     evalRun,           // D-028 — Evaluator agent (sprint-scoped grading)
+    docGarden,            // Wave 4.2 — per-project doc drift detection
+    docGardenScheduler,   // Wave 4.2 — daily 09:00 UTC scheduler tick
     exportToGitHub,    // legacy export
     deployPipeline,    // sub-plan 07
     githubImportRepo,  // sub-plan 06 §11
