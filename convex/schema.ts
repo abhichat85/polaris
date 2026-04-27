@@ -69,7 +69,16 @@ export default defineSchema({
       ),
     ),
     exportRepoUrl: v.optional(v.string()),
-  }).index("by_owner", ["ownerId"]),
+    /**
+     * Workspace this project belongs to. OPTIONAL during the multi-tenancy
+     * migration (D-020) — legacy projects have it unset until the
+     * `migrations/2026-04-create-personal-workspaces:run` mutation backfills.
+     * Will become required in a follow-up commit once backfill is verified.
+     */
+    workspaceId: v.optional(v.id("workspaces")),
+  })
+    .index("by_owner", ["ownerId"])
+    .index("by_workspace", ["workspaceId"]),
 
   files: defineTable({
     projectId: v.id("projects"),
@@ -349,6 +358,62 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  // ── Plans (D-019) — quota source-of-truth ────────────────────────────────
+  /**
+   * Plan tier definitions. One row per tier. Seeded by
+   * `plans:seedDefaults` (idempotent) — never auto-seeded on schema deploy
+   * because seed numbers are a product decision, not a migration concern.
+   * Authority: CONSTITUTION §17.2.
+   */
+  plans: defineTable({
+    /** "free" | "pro" | "team" — must match customers.plan literals. */
+    id: v.union(v.literal("free"), v.literal("pro"), v.literal("team")),
+    monthlyTokenLimit: v.number(),
+    /** Daily $ ceiling in integer cents (avoids float drift). */
+    dailyCostCeilingCents: v.number(),
+    projectsAllowed: v.number(),
+    deploysAllowedPerMonth: v.number(),
+    seats: v.number(),
+    updatedAt: v.number(),
+  }).index("by_plan_id", ["id"]),
+
+  // ── Workspaces (D-020) — multi-tenancy ───────────────────────────────────
+  /**
+   * Top-level container for projects + members. Personal workspaces are
+   * created by the migration mutation; new users get one on first sign-in
+   * (handled by the user_profiles upsert path — TODO follow-up).
+   * Authority: CONSTITUTION §11.2.
+   */
+  workspaces: defineTable({
+    name: v.string(),
+    /** URL-safe identifier; unique per row. */
+    slug: v.string(),
+    ownerId: v.string(),
+    plan: v.union(v.literal("free"), v.literal("pro"), v.literal("team")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_owner", ["ownerId"])
+    .index("by_slug", ["slug"]),
+
+  /**
+   * Membership rows. (workspaceId, userId) is unique by convention enforced
+   * in the `invite` mutation (no compound unique constraint in Convex).
+   */
+  workspace_members: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.string(),
+    role: v.union(
+      v.literal("owner"),
+      v.literal("admin"),
+      v.literal("member"),
+    ),
+    joinedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_user", ["userId"])
+    .index("by_user_workspace", ["userId", "workspaceId"]),
 
   // ── Sub-plan 07 (deploy pipeline) ────────────────────────────────────────
   deployments: defineTable({

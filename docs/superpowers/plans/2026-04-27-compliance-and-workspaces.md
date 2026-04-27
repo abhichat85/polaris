@@ -2,24 +2,31 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-## Status (last updated 2026-04-27 — second session)
+## Status (last updated 2026-04-27 — third session)
 
-**Closed in-session (commit on `main`):**
-- ✅ Phase 1.1 partial — `edit_file` tool wired into `code-agent.ts` registry + handler returns `EDIT_NOT_FOUND` / `EDIT_NOT_UNIQUE` / `BINARY_FILE` / `PATH_NOT_FOUND` errors. `run_command` deliberately NOT wired yet (no per-project sandbox lifecycle); removed from system prompt to stop the model hallucinating calls.
-- ✅ Phase 2.4 — Vercel AI SDK stripped from `/api/suggestion` and `/api/quick-edit`. Both now use raw `@anthropic-ai/sdk` with JSON-coaxed structured output. (Packages still in `package.json` — drop in a follow-up.)
-- ✅ Phase 5 partial — `Untrusted input boundary` rule added to system prompt; generic "My apologies" fallback in `process-message.ts` replaced with contextual error containing the actual model error.
-- ✅ Convex `convex:dev` / `convex:deploy` scripts added to `package.json`.
+**Closed across sessions (on `main`):**
+- ✅ **Phase 1.1** — `edit_file` tool wired (`code-agent.ts` registry + handler with full error vocabulary).
+- ✅ **Phase 2.4** — Vercel AI SDK stripped from `/api/suggestion` + `/api/quick-edit`. (Packages still in `package.json` because 6 UI files use type-only imports — refactor pending.)
+- ✅ **Phase 3a** — GPT + Gemini adapter unit tests (10 tests, all passing). Honest stub-contract tests since adapters are documented v1 stubs.
+- ✅ **Phase 4 schema** — `workspaces` + `workspace_members` tables added; `projects.workspaceId` optional FK; full CRUD queries/mutations (`getCurrent`, `listForUser`, `listMembers`, `create`, `invite`, `updateRole`, `removeMember`); idempotent backfill migration at `convex/migrations/create_personal_workspaces.ts`; React hooks at `src/features/workspaces/hooks/use-workspaces.ts`. **UI wiring still pending** — switcher in rail, member-invite dialog, project-create scoped to workspaceId.
+- ✅ **Phase 2.1 schema + query** — `plans` table seeded via `plans:seedDefaults` (idempotent internalMutation); `getById` + `assertWithinQuota` query that joins `customers.plan` + `usage`/`usage_daily` and returns `{ ok, reason?, limit?, current? }`. Tier numbers locked by unit test. **Enforcement at API/Inngest entry points still pending.**
+- ✅ **Phase 5 partial** — Prompt-injection hardening, generic apology fallback removed, `convex:dev`/`convex:deploy` scripts.
 
-**Attempted but blocked this session:**
-- ⛔ 5 parallel subagents dispatched for `edit_file`, Vercel AI SDK strip, GPT/Gemini tests, plans table, system-prompt hardening. **4 hit org monthly usage limit; 1 hit sandbox permission denial.** Recovered the high-value items by completing them in-session as listed above.
+**Required user action after pulling:**
+1. `pnpm convex:dev` (one-time, leave running) — pushes new schema + functions to your Convex deployment.
+2. `npx convex run plans:seedDefaults` — seeds the 3 plan rows.
+3. `npx convex run migrations/create_personal_workspaces:run` — backfills workspaces for existing users + projects.
 
 **Still deferred (need separate sessions):**
-- Phase 1.2 — E2B `SandboxProvider` already implemented in `src/lib/sandbox/e2b-provider.ts`; what's missing is the per-project sandbox **lifecycle** (provision on first agent run, persist `sandboxId` on the project, reprovision on `SandboxDeadError`). Touches `agent-loop.ts`, `process-message.ts`, schema (sandboxId field).
-- Phase 1.3 — `run_command` tool (now safe to add since `forbidden-commands.ts` exists) + streaming output to chat (Convex `messages.toolCalls[].stream[]` + `ToolOutputStream` UI component).
-- Phase 2.1–2.3 — `plans` table + `assertWithinQuota` + Stripe webhook from scratch.
-- Phase 3 — GPT + Gemini adapter unit tests + 5 E2E specs.
-- Phase 4 — Workspaces multi-tenancy (full).
-- Phase 5 — Plan tier badge + usage meter + Sentry alerts + drop unused npm packages.
+- **Phase 1.2** — Per-project E2B sandbox lifecycle. The `sandboxes` table already exists in schema (`sandboxId`, `expiresAt`, `needsResync`, `lastAlive` fields). What's missing: the lifecycle code in `process-message.ts` / `agent-loop.ts` that calls `getSandboxProvider().create()`, persists the row, and reprovisions on `SandboxDeadError`.
+- **Phase 1.3** — `run_command` tool. Re-add to the registry now that the lifecycle (1.2) is the only blocker. Stream stdout/stderr per-line into `messages.toolCalls[].stream[]` (extend the message validator in `schema.ts`). Add `<ToolOutputStream />` UI component.
+- **Phase 2.2** — Wire `assertWithinQuota` at 3 entry points: `src/app/api/messages/route.ts` (return 429 with reason), `src/features/conversations/inngest/agent-loop.ts` (NonRetriableError on block), `src/features/projects/inngest/github-export.ts` (same).
+- **Phase 2.3** — Stripe webhook handler at `src/app/api/billing/webhook/route.ts` (the `webhook_events` table already exists for idempotency). Handle `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed` → call existing `customers.upsertFromWebhook`.
+- **Phase 3b** — 5 E2E specs (prompt-to-preview, chat-modify, github-import, deploy, quota-blocks).
+- **Phase 4 UI** — Workspace switcher in rail, member-invite UI, project create scoped to current workspace, projects list filtered by workspace.
+- **Phase 5 polish** — Plan tier badge in rail, usage meter on Settings → Billing, Sentry instrumentation + alerts, drop `ai`/`@ai-sdk/*` packages after refactoring 6 UI files that use type-only imports.
+
+**Subagent dispatch status this session:** 6 dispatched, all blocked at sandbox permissions for the general-purpose subagent type. Work above was completed directly in-session by the parent agent.
 
 ---
 
