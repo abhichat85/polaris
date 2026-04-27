@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "@/features/workspaces/components/workspace-switcher";
+import { PlanBadge } from "@/features/billing/components/plan-badge";
 
 interface RailButtonProps {
   icon: React.ElementType;
@@ -156,6 +157,11 @@ export const IdeRail = ({
           elements: { avatarBox: "size-7" },
         }}
       />
+    </div>
+
+    {/* D-019 — current plan tier; click navigates to billing settings. */}
+    <div className="flex items-center justify-center pb-1">
+      <PlanBadge />
     </div>
   </aside>
   );

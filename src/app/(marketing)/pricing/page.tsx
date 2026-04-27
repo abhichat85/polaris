@@ -103,16 +103,36 @@ export default function PricingPage() {
                 ))}
               </ul>
 
-              <Link
-                href={t.cta.href}
-                className={`mt-8 block rounded-md px-4 py-2 text-center text-sm font-medium ${
-                  t.highlighted
-                    ? "bg-primary text-primary-foreground hover:opacity-90"
-                    : "bg-surface-4 text-foreground hover:bg-surface-3"
-                }`}
-              >
-                {t.cta.label}
-              </Link>
+              {t.id === "pro" || t.id === "team" ? (
+                <form
+                  method="POST"
+                  action="/api/billing/checkout"
+                  className="mt-8"
+                >
+                  <input type="hidden" name="tier" value={t.id} />
+                  <button
+                    type="submit"
+                    className={`block w-full rounded-md px-4 py-2 text-center text-sm font-medium transition-opacity ${
+                      t.highlighted
+                        ? "bg-primary text-primary-foreground hover:opacity-90"
+                        : "bg-surface-4 text-foreground hover:bg-surface-3"
+                    }`}
+                  >
+                    {t.cta.label}
+                  </button>
+                </form>
+              ) : (
+                <Link
+                  href={t.cta.href}
+                  className={`mt-8 block rounded-md px-4 py-2 text-center text-sm font-medium ${
+                    t.highlighted
+                      ? "bg-primary text-primary-foreground hover:opacity-90"
+                      : "bg-surface-4 text-foreground hover:bg-surface-3"
+                  }`}
+                >
+                  {t.cta.label}
+                </Link>
+              )}
             </div>
           ))}
         </div>

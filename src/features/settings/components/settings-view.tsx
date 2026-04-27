@@ -44,6 +44,7 @@ import {
   useCurrentWorkspace,
   useWorkspaceMembers,
 } from "@/features/workspaces/hooks/use-workspaces";
+import { UsageMeter } from "@/features/billing/components/usage-meter";
 
 type SectionId = "profile" | "workspace" | "preferences" | "billing" | "danger";
 
@@ -413,6 +414,11 @@ const BillingPane = ({
               : "Never"
           }
         />
+      </div>
+
+      {/* §17 / D-019 — current usage vs plan caps */}
+      <div className="rounded-md bg-surface-3 p-4">
+        <UsageMeter />
       </div>
     </div>
   );

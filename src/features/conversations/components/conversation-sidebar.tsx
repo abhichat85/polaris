@@ -1,5 +1,7 @@
 import ky from "ky";
 import { toast } from "sonner";
+
+import { showQuotaBlocked } from "@/components/quota-blocked-toast";
 import { useState } from "react";
 import {
   CopyIcon,
@@ -133,7 +135,40 @@ export const ConversationSidebar = ({
           message: message.text,
         },
       });
-    } catch {
+    } catch (error) {
+      // §17 quota gate returns 429 with structured payload; surface the
+      // upgrade CTA instead of a generic "failed to send".
+      if (
+        error &&
+        typeof error === "object" &&
+        "response" in error &&
+        error.response instanceof Response
+      ) {
+        const status = error.response.status;
+        if (status === 429) {
+          try {
+            const body = await error.response.json();
+            if (body?.error === "quota_exceeded") {
+              showQuotaBlocked({
+                reason: body.reason,
+                current: body.current,
+                limit: body.limit,
+                upgradeUrl: body.upgradeUrl,
+              });
+              setInput("");
+              return;
+            }
+          } catch {
+            /* fall through */
+          }
+        }
+        if (status === 409) {
+          toast.error(
+            "Already processing a message — cancel it first or wait.",
+          );
+          return;
+        }
+      }
       toast.error("Message failed to send");
     }
 
