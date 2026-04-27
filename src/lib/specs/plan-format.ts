@@ -89,8 +89,9 @@ export function serializePlan(plan: Plan): string {
   return lines.join("\n").trimEnd() + "\n"
 }
 
+// Accept any single char inside [ ] — falls back to "todo" on unknown.
 const FEATURE_RE =
-  /^[-*]\s+(\[[\sxX/~!]\])\s+([a-z0-9][a-z0-9-]{1,40}):\s*(.+?)(?:\s+\[(p[012])\])?\s*$/
+  /^[-*]\s+(\[[^\]]\])\s+([a-z0-9][a-z0-9-]{1,40}):\s*(.+?)(?:\s+\[(p[012])\])?\s*$/
 
 export function parsePlan(md: string): Plan {
   const lines = md.replace(/\r\n/g, "\n").split("\n")
