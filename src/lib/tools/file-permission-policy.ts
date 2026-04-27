@@ -52,6 +52,10 @@ const WRITABLE_DIRS: string[] = [
   "lib/",
   "supabase/migrations/",
   "styles/",
+  // D-026 — plan + spec markdown lives here; agent reads + occasionally edits.
+  "docs/",
+  // D-027 — agent scratchpad memory. Persists across sessions.
+  ".polaris/",
 ]
 
 function normalize(path: string): string {
