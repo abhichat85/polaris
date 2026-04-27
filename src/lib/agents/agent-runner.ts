@@ -22,6 +22,7 @@ import { AGENT_TOOLS } from "@/lib/tools/definitions"
 import { ToolExecutor } from "@/lib/tools/executor"
 import type { ToolOutput } from "@/lib/tools/types"
 import { AGENT_SYSTEM_PROMPT } from "./system-prompt"
+import { COMPACTION_THRESHOLD_TOKENS } from "./compactor"
 import type {
   AgentCheckpoint,
   AgentDoneStatus,
@@ -87,6 +88,18 @@ export const MAX_DURATION_MS = FREE_BUDGET.maxDurationMs
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_000
 const DEFAULT_TURN_TIMEOUT_MS = 60_000
 
+/**
+ * D-027 — Compactor handler. The runner calls this when the running token
+ * total crosses the compaction threshold. Returns the handoff artifact;
+ * the runner then resets `state.messages` to a single user message
+ * carrying the artifact and continues.
+ */
+export type CompactFn = (messages: Message[]) => Promise<{
+  artifact: string
+  inputTokens: number
+  outputTokens: number
+}>
+
 export interface AgentRunnerDeps {
   adapter: ModelAdapter
   executor: ToolExecutor
@@ -99,6 +112,13 @@ export interface AgentRunnerDeps {
    * updated yet (no behaviour regression).
    */
   budget?: RunBudget
+  /**
+   * D-027 — Optional compactor. When provided, the runner calls it once
+   * the token total crosses COMPACTION_THRESHOLD_TOKENS, replaces
+   * `state.messages` with the handoff artifact, and continues. When
+   * absent, the existing behaviour (hard-fail at maxTokens) applies.
+   */
+  compact?: CompactFn
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -116,6 +136,8 @@ interface RunState {
   iterationCount: number
   totalInputTokens: number
   totalOutputTokens: number
+  /** D-027 — set true after the first auto-compaction; only one per run. */
+  compacted?: boolean
 }
 
 export class AgentRunner {
@@ -137,7 +159,39 @@ export class AgentRunner {
           `Agent reached iteration limit (${budget.maxIterations}). Latest changes are saved.`,
         )
       }
-      if (state.totalInputTokens + state.totalOutputTokens >= budget.maxTokens) {
+      // D-027 — auto-compact at COMPACTION_THRESHOLD if compactor present.
+      // Only triggers ONCE before the hard cap, so a runaway agent that
+      // somehow blows through the post-compact budget will still hit the
+      // hard wall.
+      const totalTokens = state.totalInputTokens + state.totalOutputTokens
+      if (
+        this.deps.compact &&
+        totalTokens >= COMPACTION_THRESHOLD_TOKENS &&
+        !state.compacted
+      ) {
+        const result = await this.deps.compact(state.messages)
+        // Replace the conversation with the handoff seed.
+        state.messages = [
+          {
+            role: "user",
+            content:
+              `[Continuing from compaction. Use this handoff artifact to ` +
+              `pick up the work cleanly.]\n\n${result.artifact}`,
+          },
+        ]
+        // Don't reset iterationCount — the loop has done real work.
+        // Token totals carry forward so we still respect the hard cap.
+        state.compacted = true
+        // Tell the sink so the chat UI can render a "compacted" banner.
+        if (this.deps.sink.appendText) {
+          await this.deps.sink.appendText(
+            input.messageId,
+            `\n\n_(context compacted at ${totalTokens.toLocaleString()} tokens)_\n\n`,
+          )
+        }
+      }
+
+      if (totalTokens >= budget.maxTokens) {
         return this.markDone(
           input,
           state,
