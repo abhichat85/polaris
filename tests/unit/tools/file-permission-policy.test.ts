@@ -76,8 +76,13 @@ describe("FilePermissionPolicy.canWrite", () => {
 
   it("denies paths outside any writable directory (default deny)", () => {
     expect(FilePermissionPolicy.canWrite("README.md")).toBe(false)
-    expect(FilePermissionPolicy.canWrite("docs/CHANGELOG.md")).toBe(false)
     expect(FilePermissionPolicy.canWrite("scripts/build.sh")).toBe(false)
+  })
+
+  it("D-026/D-027 — docs/ and .polaris/ are now writable", () => {
+    expect(FilePermissionPolicy.canWrite("docs/plan.md")).toBe(true)
+    expect(FilePermissionPolicy.canWrite("docs/handoff-1234.md")).toBe(true)
+    expect(FilePermissionPolicy.canWrite(".polaris/notes.md")).toBe(true)
   })
 
   it("normalizes leading slash in path", () => {
