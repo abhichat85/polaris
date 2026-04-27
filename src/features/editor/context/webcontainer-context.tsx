@@ -58,8 +58,69 @@ export const useWebContainer = () => {
 let bootPromise: Promise<WebContainer> | null = null;
 let activeInstance: WebContainer | null = null;
 
+/**
+ * Cross-Origin Isolation is set at the *initial document load* via the
+ * COOP/COEP headers in src/proxy.ts. Next.js Link clicks are client-side
+ * navigations (RSC fetch) which do NOT re-establish the browsing context,
+ * so a tab that loaded a non-COI page first (e.g. `/`) and then clicked
+ * a Link into `/projects/[id]` will have `crossOriginIsolated === false`
+ * and `WebContainer.boot()` will fail with:
+ *   DataCloneError: SharedArrayBuffer transfer requires self.crossOriginIsolated
+ *
+ * Fix: detect the missing isolation and force a real navigation. The
+ * sessionStorage guard prevents an infinite reload loop in the unlikely
+ * case the proxy isn't actually serving the headers (e.g. caching proxy
+ * upstream stripping them).
+ */
+const COI_RELOAD_KEY = "polaris:coi-reload-attempted";
+
+const ensureCrossOriginIsolated = (): boolean => {
+  if (typeof window === "undefined") return true; // SSR — skip
+  if (window.crossOriginIsolated) {
+    // We're isolated. Clear any stale reload flag so future SPA navigations
+    // (which CAN preserve isolation if the source page was also COI) work.
+    try {
+      window.sessionStorage.removeItem(COI_RELOAD_KEY);
+    } catch {
+      /* private browsing — ignore */
+    }
+    return true;
+  }
+  let attempted = false;
+  try {
+    attempted = window.sessionStorage.getItem(COI_RELOAD_KEY) === "1";
+  } catch {
+    /* ignore */
+  }
+  if (attempted) {
+    // We already tried reload and isolation still didn't take. Surface the
+    // error rather than loop. Most likely cause: proxy.ts headers being
+    // stripped by an upstream layer (Vercel edge, CF tunnel, etc.).
+    return false;
+  }
+  try {
+    window.sessionStorage.setItem(COI_RELOAD_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+  // Replace (not reload) so the back-button history isn't polluted.
+  window.location.replace(window.location.href);
+  return false;
+};
+
 const getOrBootWebContainer = (): Promise<WebContainer> => {
   if (activeInstance) return Promise.resolve(activeInstance);
+  if (!ensureCrossOriginIsolated()) {
+    return Promise.reject(
+      new Error(
+        "Cross-Origin Isolation not active on this page. proxy.ts must " +
+          "send Cross-Origin-Opener-Policy: same-origin and " +
+          "Cross-Origin-Embedder-Policy: credentialless on /projects/*. " +
+          "If those headers are present in the network tab and this still " +
+          "fires, check that no upstream proxy is stripping them.",
+      ),
+    );
+  }
   if (!bootPromise) {
     bootPromise = WebContainer.boot()
       .then((instance) => {
