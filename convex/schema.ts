@@ -292,6 +292,11 @@ export default defineSchema({
 
   specs: defineTable({
     projectId: v.id("projects"),
+    /**
+     * D-026 — plan title surfaced in the IDE plan pane.
+     * Optional for back-compat with rows written before plan mode landed.
+     */
+    title: v.optional(v.string()),
     features: v.array(
       v.object({
         /** ULID — sortable timestamp prefix, see CONSTITUTION §11.2. */
@@ -306,9 +311,16 @@ export default defineSchema({
           v.literal("blocked"),
         ),
         priority: v.union(v.literal("p0"), v.literal("p1"), v.literal("p2")),
+        // D-026 — sprint index for plan-mode grouping. Optional for legacy.
+        sprint: v.optional(v.number()),
         praxiomEvidenceIds: v.optional(v.array(v.string())),
       }),
     ),
+    /**
+     * D-026 — markdown form of the plan. Agent + UI both read/write this.
+     * `serializePlan(parsePlan(md))` is the round-trip contract.
+     */
+    planMarkdown: v.optional(v.string()),
     updatedAt: v.number(),
     updatedBy: v.union(
       v.literal("user"),
