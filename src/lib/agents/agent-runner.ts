@@ -220,6 +220,16 @@ export class AgentRunner {
         return this.markDone(input, state, "cancelled")
       }
 
+      // D-033 — steering check between iterations. If the user queued a
+      // follow-up while the agent was working, inject it as a user
+      // message before the next adapter call.
+      if (this.deps.sink.pullPendingSteer) {
+        const steer = await this.deps.sink.pullPendingSteer(input.messageId)
+        if (steer) {
+          state.messages.push({ role: "user", content: steer })
+        }
+      }
+
       const turn = await this.runTurn(input, state)
 
       // Adapter-level error → mark errored and stop.

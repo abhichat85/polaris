@@ -59,6 +59,20 @@ export class ConvexAgentSink implements AgentSink {
     })
   }
 
+  // D-033 — steering: pull next pending + mark consumed in one trip.
+  async pullPendingSteer(messageId: string): Promise<string | null> {
+    const next = await this.deps.convex.query(api.steering.nextPending, {
+      internalKey: this.deps.internalKey,
+      messageId: messageId as Id<"messages">,
+    })
+    if (!next) return null
+    await this.deps.convex.mutation(api.steering.markConsumed, {
+      internalKey: this.deps.internalKey,
+      id: next._id,
+    })
+    return next.text
+  }
+
   async appendToolCall(messageId: string, toolCall: ToolCall): Promise<void> {
     await this.deps.convex.mutation(api.agent_messages.appendToolCall, {
       internalKey: this.deps.internalKey,

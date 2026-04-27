@@ -85,4 +85,12 @@ export interface AgentSink {
 
   /** Returns true if a cancellation has been signalled for this message. */
   isCancelled(messageId: string): Promise<boolean>
+
+  /**
+   * D-033 — steering hook (pi-mono port). Returns the next un-consumed
+   * steering message for this run, marking it consumed atomically. The
+   * AgentRunner injects the text as a user message between iterations.
+   * Optional — sinks that don't care return undefined / no-op.
+   */
+  pullPendingSteer?(messageId: string): Promise<string | null>
 }
