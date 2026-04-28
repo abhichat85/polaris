@@ -6,7 +6,12 @@
  *
  * The Generator agent reads this file at the start of every session.
  * Power users edit it to teach Polaris their conventions.
+ *
+ * D-042 — appends the worked-pattern library fragment so the agent
+ * learns to consult /.polaris/patterns/<name>.tsx for canonical UIs.
  */
+
+import { PATTERNS_AGENTS_MD_FRAGMENT } from "./patterns"
 
 export const STARTER_AGENTS_MD = `# Project Map for AI Agents
 
@@ -51,9 +56,19 @@ The agent must NEVER edit:
 - \`npm test\` — run unit tests.
 - \`npm run lint\` — ESLint. Fix violations before declaring "done".
 
+## Runtime error capture
+
+The preview app loads \`polaris-runtime-tap.js\` which captures
+window.onerror, unhandled promise rejections, console.error, failed
+fetches, and React error boundaries. When the user says "this button
+doesn't work" you can confirm by calling the \`read_runtime_errors\`
+tool — recent uncaught errors come back keyed by kind + message + url.
+Errors are also auto-injected at the start of each turn when fresh.
+
 ## How this file evolves
 
 When the user asks for a new convention, add it here. When you discover
 a project quirk worth remembering across sessions, add it to
 \`.polaris/notes.md\` (terser, more transient than this file).
-`
+
+${PATTERNS_AGENTS_MD_FRAGMENT}`
