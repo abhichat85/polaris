@@ -1,0 +1,113 @@
+# Real-eval (v2) — D-048 plan H.4.
+#
+# Boots the agent loop end-to-end against each scenario in
+# tests/eval/v2/scenarios/, drives the generated app with Playwright,
+# uploads visual diffs as artifacts, and posts a Slack summary.
+#
+# Costs ~$3-8 per scenario × 8 = up to $64 per nightly run; on-PR runs
+# only the scenarios touched by the changed files (see filter step).
+# Tier-gated to weekday nights so we don't burn budget on weekend
+# pushes.
+
+name: eval-real
+
+on:
+  schedule:
+    # 08:00 UTC = ~midnight Pacific weekdays
+    - cron: "0 8 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      scenario_ids:
+        description: "Comma-separated scenario ids to run (default: all)"
+        required: false
+        default: ""
+      update_baselines:
+        description: "Overwrite baselines with this run's screenshots"
+        required: false
+        default: "false"
+
+concurrency:
+  group: eval-real-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      EVAL_BUDGET_USD_LIMIT: "75"
+      EVAL_BASELINE_ROOT: tests/eval/v2/baselines
+      ANTHROPIC_API_KEY: ${{ secrets.EVAL_ANTHROPIC_API_KEY }}
+      NEXT_PUBLIC_CONVEX_URL: ${{ secrets.EVAL_CONVEX_URL }}
+      POLARIS_CONVEX_INTERNAL_KEY: ${{ secrets.EVAL_CONVEX_INTERNAL_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.EVAL_CLERK_SECRET_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.EVAL_CLERK_PUBLISHABLE_KEY }}
+      EVAL_UPDATE_BASELINES: ${{ inputs.update_baselines || 'false' }}
+      EVAL_SCENARIO_IDS: ${{ inputs.scenario_ids || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install eval extras (pixelmatch + pngjs)
+        run: pnpm add -D pixelmatch pngjs @types/pixelmatch @types/pngjs
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run real-eval scenarios
+        run: pnpm test:eval:real
+        timeout-minutes: 75
+
+      - name: Upload screenshots + diffs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-real-screenshots
+          path: |
+            tests/eval/v2/output/
+            !tests/eval/v2/output/**/*.log
+          retention-days: 14
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-real-report
+          path: tests/eval/v2/output/report.json
+          retention-days: 30
+
+      - name: Post Slack summary
+        if: always() && github.event_name == 'schedule'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.EVAL_SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "No Slack webhook configured — skipping notification."
+            exit 0
+          fi
+          if [ ! -f tests/eval/v2/output/report.json ]; then
+            payload='{"text":"⚠️ eval-real produced no report (likely a setup failure)."}'
+          else
+            passed=$(jq '.passed' tests/eval/v2/output/report.json)
+            failed=$(jq '.failed' tests/eval/v2/output/report.json)
+            errored=$(jq '.errored' tests/eval/v2/output/report.json)
+            payload=$(jq -n \
+              --arg p "$passed" --arg f "$failed" --arg e "$errored" \
+              --arg sha "${GITHUB_SHA:0:7}" \
+              '{text:("Polaris eval-real: " + $p + " passed / " + $f + " failed / " + $e + " errored (" + $sha + ")")}')
+          fi
+          curl -fsS -X POST -H "content-type: application/json" \
+            --data "$payload" "$SLACK_WEBHOOK_URL"

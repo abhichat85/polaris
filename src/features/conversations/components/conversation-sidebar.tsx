@@ -47,6 +47,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 
 import { ConversationsDialog } from "./conversations-dialog";
+import { RuntimeErrorChip } from "./runtime-error-chip";
 
 import { Id } from "../../../../convex/_generated/dataModel";
 import { DEFAULT_CONVERSATION_TITLE } from "../../../../convex/constants";
@@ -224,7 +225,8 @@ export const ConversationSidebar = ({
             {activeConversation?.title ?? DEFAULT_CONVERSATION_TITLE}
           </span>
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center px-1 gap-1">
+          <RuntimeErrorChip projectId={projectId} />
           <Button
             size="icon-xs"
             variant="highlight"

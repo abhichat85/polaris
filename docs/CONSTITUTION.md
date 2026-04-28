@@ -2585,6 +2585,104 @@ Each scaffolded project ships with a 100-line `/AGENTS.md` table-of-contents poi
 
 ---
 
+### D-034: `search_code` Tool — ripgrep-backed Project Search (locked 2026-04-27)
+
+Added `search_code` as the eighth agent tool. ripgrep-backed text search across project files. Exit code 1 (no matches) treated as success. Returns matches as `{path, line, snippet}` rows; max 500 results, default cap 80, results past cap reported as `truncated`. Authority: tool contract §8; runbook `docs/runbooks/e2b-image-bake.md` for the ripgrep apt install. Replaces a class of `list_files`+`read_file` walks the agent previously had to do for symbol/import/pattern lookups.
+
+---
+
+### D-035: `multi_edit` Tool — Atomic Multi-Region Edits (locked 2026-04-28)
+
+Added `multi_edit` as the ninth agent tool. Applies an ordered array of search/replace edits to a single file atomically. Each edit's search must be unique in the file as it stands after preceding edits, or set `replaceAll=true`. All-or-nothing: any failure returns an error code (`EDIT_NOT_FOUND`/`EDIT_NOT_UNIQUE`) with the failing edit's index and leaves the file unchanged. Mirrors Claude Code's MultiEdit semantics. Authority: tool contract §8.
+
+---
+
+### D-036: Verification Loop Between Agent Turns (locked 2026-04-28)
+
+When the model stops emitting tool calls and there are pending changed paths, the runner runs `tsc --noEmit` (project-wide, output filtered to changed paths) and `eslint --quiet` on changed `.ts/.tsx/.js/.jsx` files. On errors, the runner pushes a synthetic user message with the formatted output and continues; up to 3 auto-fix attempts before surfacing as `markDone(error)`. The verifier is wired via the optional `AgentRunnerDeps.verify` dep — when absent, behaviour is identical to pre-D-036. Phase B.4 (build verification on completion claim) and B.5 (per-project verification settings) extend this. Authority: `src/lib/agents/verifier.ts`, sub-plan `2026-04-28-10x-output-quality.md` Phase B.
+
+---
+
+### D-037: Build Verification on Completion Claim (locked 2026-04-28)
+
+After the path-level verifier (D-036) clears, if the agent has accumulated edits earlier in the run AND the optional `AgentRunnerDeps.verifyBuild` dep is wired, the runner invokes it (typically `npx next build`). On failure the runner pushes a synthetic user message with the build output (truncated to ~80 lines) and continues — capped at 2 build-fix attempts (separate from the tsc/eslint cap). On the 3rd failed attempt the runner marks `error`. `verifyBuild` is intentionally tier-gated by the caller (agent-loop.ts) — `next build` is expensive enough that we don't run it on free tier by default. Authority: `src/lib/agents/verifier.ts::verifyBuild`, agent-runner `MAX_BUILD_FIX_ATTEMPTS`.
+
+---
+
+### D-038: Per-Project Verification Settings (locked 2026-04-28)
+
+`projects.verification` is an optional sparse object `{ typecheck?, lint?, build? }` that overrides the tier defaults for D-036/D-037 stages. Tier defaults: free → all off, pro/team → all on. Per-field overrides are merged on top of the tier default by `resolveVerificationPolicy(plan, overrides)` in `src/lib/agents/verification-policy.ts`, and the agent-loop only wires the `verify` / `verifyBuild` deps that the resolved policy enables. Lets paid-tier users disable expensive `next build` per project (e.g. for a doc site) and lets free-tier users opt INTO tsc/eslint at their own quota cost. Authority: `convex/projects.ts::setVerificationSettings`, `src/lib/agents/verification-policy.ts`.
+
+---
+
+### D-039: Task Classifier (locked 2026-04-28)
+
+Each agent run is classified at start time as `trivial`, `standard`, or `hard` by a deterministic regex/keyword classifier (`src/lib/agents/task-classifier.ts`). Hard signals (any one wins): first turn of conversation, plan size > 5 features, prompt contains refactor/rewrite/investigate/debug/architecture/design/migrate/redesign, or > 5 recent file edits. Trivial requires both signals: prompt < 80 chars AND starts with rename/fix typo/change/update/remove/delete/add. Standard is the fall-through. Drives D-040 (model routing) and D-041 (budget multipliers). The cheap heuristic ships in v1; future iteration can replace with a tiny Haiku-classified pass at turn start.
+
+---
+
+### D-040: Multi-Model Routing (locked 2026-04-28)
+
+Within the Anthropic provider, picks the right Claude tier per role + task class:
+
+- planner, evaluator → Opus 4.7
+- compactor → Haiku 4.5
+- executor + trivial → Haiku 4.5
+- executor + standard → Sonnet 4.6 (current default)
+- executor + hard → Opus 4.7
+
+Free tier is gated to Sonnet for executor/planner/evaluator (Haiku still allowed for compactor, the cheap path). Pro/Team get full routing. Per-project model overrides win over the table when set. Authority: `src/lib/agents/task-models.ts::resolveTaskModel` + `applyTierGate`.
+
+---
+
+### D-041: Task-Classified Budget Multipliers (locked 2026-04-28)
+
+Layered on top of the tier-aware budget (D-025): trivial gets 0.2x iterations/tokens and 0.3x duration; standard is 1.0x (unchanged); hard is 1.6x across all axes. Floored: maxIterations >= 1, maxTokens >= 1000, maxDurationMs >= 60s so no axis can collapse to zero on the trivial × free combination. Effect: a typo fix on Pro tier no longer gets the same 30-min / 100-iter budget as a multi-feature build; a hard refactor on Pro stretches to ~48 min / 160 iter. Authority: `src/lib/agents/agent-runner.ts::runBudgetForTask`.
+
+---
+
+### D-042: Worked-Pattern Library (locked 2026-04-28)
+
+Six canonical UI patterns are stored as `.tsx` source strings in `src/lib/scaffold/patterns/` and copied as files into every new project at `/.polaris/patterns/<name>.tsx`. The patterns cover the surfaces every Polaris-built app needs: auth form, data table, dashboard KPI cards, settings page, empty state, and data-fetching page. Each pattern's header documents when to use it, which Praxiom design tokens it uses, and common variants. The starter AGENTS.md includes a fragment (`PATTERNS_AGENTS_MD_FRAGMENT`) telling the agent to read the matching pattern before generating its own structure for solved problems. Adding/modifying patterns requires a Constitutional amendment because they shape the feel of every Polaris-built app. Authority: `src/lib/scaffold/patterns/index.ts`.
+
+---
+
+### D-043: Runtime Error Capture from Preview Iframe (locked 2026-04-29)
+
+Browser-side `polaris-runtime-tap.js` (served from `/public/`) hooks `window.onerror`, `unhandledrejection`, `console.error`, failed `fetch`, and a custom `polaris:react-error` event from React error boundaries; POSTs each event to `/api/runtime-error`. The Next.js proxy validates with Zod, holds the `POLARIS_CONVEX_INTERNAL_KEY`, and forwards to `runtimeErrors.ingest` which dedupes within a 1s window per `(kind, message, url)` and rate-limits at 50/min/project. Tap injection is scaffold-side and tier-gated to Pro/Team via `shouldInjectRuntimeTap(plan)`. Authority: `convex/runtimeErrors.ts`, `public/polaris-runtime-tap.js`, `src/app/api/runtime-error/route.ts`.
+
+---
+
+### D-044: Per-Project Live Context (locked 2026-04-29)
+
+`projects.activeRoute`, `projects.activeFiles[]` (cap 5), and `projects.recentEdits[]` (cap 10) record what the user is currently looking at and what the agent has touched recently. `setActiveRoute` + `pushActiveFile` are user-facing mutations called from the IDE preview/file tree. `recordRecentEditInternal` is internalKey-gated and called by ToolExecutor.deps.recordEdit after every successful mutating tool call. `getLiveContextInternal` returns the bundle for runner-side injection (D-047). Authority: `convex/projects.ts`.
+
+---
+
+### D-045: `read_runtime_errors` Tool (locked 2026-04-29)
+
+Tenth agent tool. Returns recent unconsumed runtime errors for the project as a formatted text block (kind, message, url, age, first stack frame, dedupe count). `markConsumed` defaults true so the model doesn't re-see the same errors. Tool count goes 9 → 10; failures fall back gracefully when `ToolExecutorDeps.runtimeErrors` is not wired (free tier or local-dev). Authority: `src/lib/tools/read-runtime-errors.ts`, executor deps `runtimeErrors`.
+
+---
+
+### D-046: Auto-Inject Runtime Errors at Turn Start (locked 2026-04-29)
+
+`AgentRunner.deps.loadRuntimeErrors` is called between iterations (after the steering check, before the model adapter). When fresh errors exist, the runner pushes a synthetic user message describing them so the model sees "the preview reported these errors since your last turn" without the user having to ask. Best-effort: any loader failure is swallowed (runtime-error capture must not fail the agent loop). agent-loop wires the loader against `runtimeErrors.listUnconsumedInternal` + `markConsumedInternal` and tracks `lastInjectAt` across iterations. Authority: `src/lib/agents/agent-runner.ts::run`.
+
+---
+
+### D-047: Live-Context Injection at Turn Start (locked 2026-04-29)
+
+`AgentRunner.deps.loadLiveContext` is called immediately after the runtime-error inject. Pushes a markdown block containing `Active route: …`, `Recently edited (newest first): …`, and `Currently open in editor: …` derived from `projects.getLiveContextInternal`. Helps a vague "this is broken" land without a round-trip — the model knows where the user is looking. Best-effort; empty fields → no injection. Authority: `src/features/conversations/inngest/agent-loop.ts` (loader), `src/lib/agents/agent-runner.ts::run`.
+
+---
+
+### D-048: Real-Eval v2 — Output-Quality Harness (locked 2026-04-29)
+
+`tests/eval/v2/` is the second eval layer. Where v1 (`tests/eval/quality-scenarios.test.ts`) measures *agent process* with a deterministic LLM stub, v2 boots the generated app via Playwright and asserts visual + behavioral correctness against 8 canonical scenarios (static page, auth flow, product list with cart, form validation, theme toggle, fix-runtime-bug, image-to-UI, fullstack todo). Visual-diff is gated by `pixelmatch` + `pngjs` (opt-in dev deps); first-run adopts the candidate as baseline; subsequent runs fail when delta exceeds 5%. CI: nightly cron + workflow_dispatch in `.github/workflows/eval-real.yml`; report.json + screenshots uploaded as artifacts. A change to the agent loop must keep v1 green AND not regress v2 pass rate. Authority: `tests/eval/v2/`, `scripts/eval-real.ts`, `docs/QUALITY-REPORT.md`.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
@@ -2640,4 +2738,4 @@ It is not a finished document. It will change. Amend it deliberately. Never viol
 
 *Build Polaris correctly the first time, so we don't have to build it twice.*
 
-— Authors, 2026-04-26 (last amended 2026-04-27: D-026 plan mode, D-027 compaction, D-028 evaluator, D-029 browser tools, D-030 AGENTS.md, D-031 lints, D-032 Context shape, D-033 steering)
+— Authors, 2026-04-26 (last amended 2026-04-28: D-026 plan mode, D-027 compaction, D-028 evaluator, D-029 browser tools, D-030 AGENTS.md, D-031 lints, D-032 Context shape, D-033 steering, D-034 search_code, D-035 multi_edit, D-036 verification loop)

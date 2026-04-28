@@ -23,16 +23,28 @@
 import { ConvexHttpClient } from "convex/browser"
 import { NonRetriableError } from "inngest"
 import { inngest } from "@/inngest/client"
-import { AgentRunner, runBudget } from "@/lib/agents/agent-runner"
+import {
+  AgentRunner,
+  runBudget,
+  runBudgetForTask,
+} from "@/lib/agents/agent-runner"
 import { ConvexAgentSink } from "@/lib/agents/convex-sink"
 import { ConvexFileService } from "@/lib/files/convex-file-service"
-import { getAdapter } from "@/lib/agents/registry"
+import { ClaudeAdapter } from "@/lib/agents/claude-adapter"
 import {
   getSandboxProvider,
   SandboxDeadError,
 } from "@/lib/sandbox"
 import { ToolExecutor } from "@/lib/tools/executor"
 import { withSpan } from "@/lib/observability/spans"
+import { verify, verifyBuild } from "@/lib/agents/verifier"
+import {
+  resolveVerificationPolicy,
+  shouldWireVerify,
+  shouldWireVerifyBuild,
+} from "@/lib/agents/verification-policy"
+import { classifyTask } from "@/lib/agents/task-classifier"
+import { resolveTaskModel, applyTierGate } from "@/lib/agents/task-models"
 import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
 
@@ -98,7 +110,6 @@ export const agentLoop = inngest.createFunction(
       userId: data.userId,
     })
     const plan = (customer?.plan ?? "free") as "free" | "pro" | "team"
-    const budget = runBudget(plan)
 
     // Constitution §17 — pre-loop quota check. NonRetriableError so Inngest
     // doesn't burn retries on a quota wall.
@@ -148,8 +159,127 @@ export const agentLoop = inngest.createFunction(
 
     const sink = new ConvexAgentSink({ convex, internalKey })
     const files = new ConvexFileService({ convex })
-    const executor = new ToolExecutor({ files, sandbox })
-    const adapter = getAdapter("claude")
+    const executor = new ToolExecutor({
+      files,
+      sandbox,
+      // D-044 — push every successful mutating edit into projects.recentEdits
+      // so the runner's live-context block (D-047) reflects what the agent
+      // just touched.
+      recordEdit: async (path: string) => {
+        await convex.mutation(api.projects.recordRecentEditInternal, {
+          internalKey,
+          id: projectId,
+          path,
+        })
+      },
+      // D-045 — wire the read_runtime_errors tool to Convex.
+      runtimeErrors: {
+        list: async (args) => {
+          const rows = await convex.query(
+            api.runtimeErrors.listUnconsumedInternal,
+            { internalKey, projectId, since: args.since },
+          )
+          return rows.map((r) => ({
+            _id: r._id as string,
+            kind: r.kind,
+            message: r.message,
+            stack: r.stack,
+            url: r.url,
+            componentStack: r.componentStack,
+            timestamp: r.timestamp,
+            count: r.count,
+          }))
+        },
+        markConsumed: async (ids) => {
+          await convex.mutation(api.runtimeErrors.markConsumedInternal, {
+            internalKey,
+            ids: ids as Id<"runtimeErrors">[],
+          })
+        },
+      },
+    })
+
+    // D-039/40/41 — classify the run, pick a model, size the budget. We
+    // need: latest user prompt (the agent's marching orders), whether
+    // this is the first turn, and how big the active plan is.
+    const { taskClass, modelId } = await (async () => {
+      try {
+        const messages = await convex.query(api.system.getConversationMessages, {
+          internalKey,
+          conversationId: data.conversationId as Id<"conversations">,
+        })
+        const userMessages = messages.filter((m) => m.role === "user")
+        const latest = userMessages.at(-1)
+        const userPrompt = typeof latest?.content === "string" ? latest.content : ""
+        const isFirstTurn = userMessages.length <= 1
+
+        let planSize = 0
+        try {
+          const currentSpec = await convex.query(api.specs.getByProject, {
+            projectId: projectId,
+          })
+          planSize = currentSpec?.features?.length ?? 0
+        } catch {
+          /* no plan / older convex schema — treat as planSize=0 */
+        }
+
+        const taskClass = classifyTask({
+          userPrompt,
+          planSize,
+          recentFileCount: 0, // populated once E.1 ships
+          isFirstTurn,
+        })
+        const baseModel = resolveTaskModel({ role: "executor", taskClass })
+        const modelId = applyTierGate(plan, baseModel, "executor")
+        return { taskClass, modelId }
+      } catch {
+        // Defensive fallback — Sonnet, standard task class.
+        return {
+          taskClass: "standard" as const,
+          modelId: applyTierGate(
+            plan,
+            resolveTaskModel({ role: "executor", taskClass: "standard" }),
+            "executor",
+          ),
+        }
+      }
+    })()
+
+    const budget = runBudgetForTask(plan, taskClass)
+    const adapter = new ClaudeAdapter({
+      apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+      model: modelId,
+    })
+
+    // D-038 — resolve per-project verification policy. Project may have a
+    // sparse override of the tier defaults (free off, pro/team on).
+    // Best-effort: any error keeps verification disabled.
+    const verificationFlags = await (async () => {
+      try {
+        const project = await convex.query(api.projects.getById, {
+          id: projectId,
+        })
+        return resolveVerificationPolicy(plan, project?.verification)
+      } catch {
+        return resolveVerificationPolicy(plan, undefined)
+      }
+    })()
+
+    // D-036/D-037 — wire verifier deps when policy enables them. Both
+    // pass deps.exec bound to this sandbox so the verifier doesn't need
+    // its own sandbox handle.
+    const verifyDep = shouldWireVerify(verificationFlags)
+      ? (paths: ReadonlySet<string>) =>
+          verify(paths, {
+            exec: (cmd, opts) => sandbox.exec(sandboxId, cmd, opts ?? {}),
+          })
+      : undefined
+    const verifyBuildDep = shouldWireVerifyBuild(verificationFlags)
+      ? () =>
+          verifyBuild({
+            exec: (cmd, opts) => sandbox.exec(sandboxId, cmd, opts ?? {}),
+          })
+      : undefined
 
     // D-030 — augment system prompt with the project's AGENTS.md if present.
     // Best-effort: any error keeps the canonical prompt.
@@ -171,6 +301,64 @@ export const agentLoop = inngest.createFunction(
     // Single-retry loop on SandboxDeadError. After one reprovision, escalate.
     let attempts = 0
     while (true) {
+      // D-046 — auto-inject runtime errors at turn start. Tracks the
+      // last-seen timestamp across iterations so we don't re-inject
+      // the same errors. First call returns errors from the last 60s.
+      let lastInjectAt = Date.now() - 60_000
+      const loadRuntimeErrorsDep = async () => {
+        const rows = await convex.query(
+          api.runtimeErrors.listUnconsumedInternal,
+          { internalKey, projectId, since: lastInjectAt },
+        )
+        if (rows.length === 0) return undefined
+        const ids = rows.map((r) => r._id)
+        await convex.mutation(api.runtimeErrors.markConsumedInternal, {
+          internalKey,
+          ids: ids as Id<"runtimeErrors">[],
+        })
+        lastInjectAt = Date.now()
+        return rows
+          .map((r) => {
+            const ageSec = Math.max(0, Math.round((Date.now() - r.timestamp) / 1000))
+            const dupeNote = r.count && r.count > 1 ? ` ×${r.count}` : ""
+            const urlNote = r.url ? `  (${r.url})` : ""
+            return `[${r.kind}${dupeNote}] ${r.message}${urlNote}  — ${ageSec}s ago`
+          })
+          .join("\n")
+      }
+
+      // D-047 — live context loader. Reads activeRoute + recentEdits
+      // + activeFiles and renders a tight markdown block. Skipped when
+      // no fields are set (a fresh project with zero context).
+      const loadLiveContextDep = async () => {
+        try {
+          const ctxRow = await convex.query(
+            api.projects.getLiveContextInternal,
+            { internalKey, id: projectId },
+          )
+          if (!ctxRow) return undefined
+          const sections: string[] = []
+          if (ctxRow.activeRoute) {
+            sections.push(`Active route: \`${ctxRow.activeRoute}\``)
+          }
+          if (ctxRow.recentEdits.length > 0) {
+            const lines = ctxRow.recentEdits.slice(0, 5).map((e) => {
+              const ageSec = Math.max(0, Math.round((Date.now() - e.at) / 1000))
+              return `  - \`${e.path}\` (${ageSec}s ago)`
+            })
+            sections.push(`Recently edited (newest first):\n${lines.join("\n")}`)
+          }
+          if (ctxRow.activeFiles.length > 0) {
+            const lines = ctxRow.activeFiles.map((p) => `  - \`${p}\``)
+            sections.push(`Currently open in editor:\n${lines.join("\n")}`)
+          }
+          if (sections.length === 0) return undefined
+          return `## Live context\n\n${sections.join("\n\n")}`
+        } catch {
+          return undefined
+        }
+      }
+
       const runner = new AgentRunner({
         adapter,
         executor,
@@ -178,6 +366,10 @@ export const agentLoop = inngest.createFunction(
         sandboxId,
         budget, // D-025
         systemPrompt: systemPromptOverride, // D-030
+        verify: verifyDep, // D-036
+        verifyBuild: verifyBuildDep, // D-037
+        loadRuntimeErrors: loadRuntimeErrorsDep, // D-046
+        loadLiveContext: loadLiveContextDep, // D-047
       })
       try {
         await runner.run({

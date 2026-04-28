@@ -1,5 +1,6 @@
 /**
- * The seven agent tools. Authority: CONSTITUTION.md Article VIII (D-017 amended).
+ * The ten agent tools. Authority: CONSTITUTION.md Article VIII
+ * (D-017, D-034, D-035, D-045 amended).
  *
  * Adding a new tool requires a Constitutional amendment (Article XXI) — do not
  * extend this list casually. Removing a tool also requires an amendment.
@@ -65,6 +66,23 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "multi_edit",
+    description:
+      "Apply multiple find-and-replace edits to a single file atomically. All edits must succeed or none are applied. Edits are applied sequentially; each edit's search must match exactly once in the file *as it is after preceding edits* (or set replaceAll=true). Use this when you need 2+ surgical changes to the same file — cheaper than multiple edit_file calls and avoids partial-state-between-edits hazards.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        edits: {
+          type: "array",
+          description:
+            "Sequence of edits applied in order. Each edit's search must be unique in the file *after* preceding edits (or set replaceAll=true).",
+        },
+      },
+      required: ["path", "edits"],
+    },
+  },
+  {
     name: "create_file",
     description: "Create a new file with content. Fails if the file already exists.",
     inputSchema: {
@@ -100,6 +118,37 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "search_code",
+    description:
+      "Search file contents in the project using ripgrep. Returns matching lines with file path, line number, and a short snippet. Prefer this over list_files+read_file when looking for symbol usages, imports, or text patterns.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Pattern to search for. Plain text by default; set regex=true for regex.",
+        },
+        pathGlob: {
+          type: "string",
+          description: "Optional glob to scope: e.g. 'src/**/*.tsx'. Default: whole project.",
+        },
+        regex: {
+          type: "boolean",
+          description: "Treat query as regex. Default false.",
+        },
+        caseSensitive: {
+          type: "boolean",
+          description: "Case sensitivity. Default false.",
+        },
+        maxResults: {
+          type: "integer",
+          description: "Cap on returned matches. Default 80, hard max 500.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "run_command",
     description:
       "Execute a shell command in the sandbox. Use for npm install, npm test, npm run lint, etc. NOT for npm run dev (already running). Output is captured and returned. Hard timeout: 60 seconds.",
@@ -113,6 +162,27 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         },
       },
       required: ["command"],
+    },
+  },
+  {
+    name: "read_runtime_errors",
+    description:
+      "Read recent uncaught errors from the running preview app. Returns errors captured by window.onerror, unhandled promise rejections, console.error calls, failed fetches, and React error boundaries. Empty array means no runtime errors right now (which is what you want). Use this to diagnose 'this button doesn't work' style reports — the preview reports the actual error you can fix.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: {
+          type: "integer",
+          description:
+            "Optional unix-ms; only return errors at or after this time. Default: last 60s.",
+        },
+        markConsumed: {
+          type: "boolean",
+          description:
+            "Mark these errors as seen so subsequent calls don't re-return them. Default true.",
+        },
+      },
+      required: [],
     },
   },
 ]

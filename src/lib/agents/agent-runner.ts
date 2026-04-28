@@ -23,6 +23,7 @@ import { ToolExecutor } from "@/lib/tools/executor"
 import type { ToolOutput } from "@/lib/tools/types"
 import { AGENT_SYSTEM_PROMPT } from "./system-prompt"
 import { COMPACTION_THRESHOLD_TOKENS } from "./compactor"
+import type { VerifyResult } from "./verifier"
 import type {
   AgentCheckpoint,
   AgentDoneStatus,
@@ -80,6 +81,42 @@ export function runBudget(plan: Plan): RunBudget {
   return FREE_BUDGET
 }
 
+/**
+ * D-041 — Task-classified budget multipliers. A trivial typo gets a
+ * fraction of the standard budget; a hard multi-file refactor gets
+ * extra room. Layered on top of the tier-aware budget (D-025).
+ *
+ * Multipliers chosen so a "trivial" task can't burn 30 minutes on free
+ * tier and a "hard" task on Pro can stretch to ~48 minutes (vs 30 base).
+ */
+export type TaskClass = "trivial" | "standard" | "hard"
+
+interface ClassMultipliers {
+  iter: number
+  tok: number
+  dur: number
+}
+
+const CLASS_MULTIPLIERS: Record<TaskClass, ClassMultipliers> = {
+  trivial: { iter: 0.2, tok: 0.2, dur: 0.3 },
+  standard: { iter: 1.0, tok: 1.0, dur: 1.0 },
+  hard: { iter: 1.6, tok: 1.6, dur: 1.6 },
+}
+
+/**
+ * Combine the tier base (D-025) with the task-class multiplier (D-041).
+ * Returns whole-number budget values rounded to the nearest integer.
+ */
+export function runBudgetForTask(plan: Plan, taskClass: TaskClass): RunBudget {
+  const base = runBudget(plan)
+  const mult = CLASS_MULTIPLIERS[taskClass]
+  return {
+    maxIterations: Math.max(1, Math.round(base.maxIterations * mult.iter)),
+    maxTokens: Math.max(1_000, Math.round(base.maxTokens * mult.tok)),
+    maxDurationMs: Math.max(60_000, Math.round(base.maxDurationMs * mult.dur)),
+  }
+}
+
 // Back-compat exports — existing callers/tests reference these directly.
 export const MAX_ITERATIONS = FREE_BUDGET.maxIterations
 export const MAX_TOKENS = FREE_BUDGET.maxTokens
@@ -87,6 +124,20 @@ export const MAX_DURATION_MS = FREE_BUDGET.maxDurationMs
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_000
 const DEFAULT_TURN_TIMEOUT_MS = 60_000
+
+/**
+ * D-036 — Cap on auto-fix attempts before surfacing verification errors
+ * to the user. After 3 failed verifier rounds we stop trying and mark
+ * the run as `error` with the latest residual errors as the message.
+ */
+const MAX_AUTO_FIX_ATTEMPTS = 3
+
+/**
+ * D-037 — Cap on build-verification attempts. `next build` is much more
+ * expensive than tsc/eslint, so we give the agent fewer chances to
+ * self-correct before surfacing.
+ */
+const MAX_BUILD_FIX_ATTEMPTS = 2
 
 /**
  * D-027 — Compactor handler. The runner calls this when the running token
@@ -125,6 +176,47 @@ export interface AgentRunnerDeps {
    * canonical AGENT_SYSTEM_PROMPT. Defaults to AGENT_SYSTEM_PROMPT alone.
    */
   systemPrompt?: string
+  /**
+   * D-036 — Optional verifier. When provided, the runner runs tsc+eslint
+   * against the agent's changed paths whenever the model stops emitting
+   * tool calls. On verification errors, the runner injects a synthetic
+   * user message with the errors and continues, up to 3 auto-fix
+   * attempts. When absent, behaviour is identical to pre-D-036.
+   */
+  verify?: (changedPaths: ReadonlySet<string>) => Promise<VerifyResult>
+  /**
+   * D-037 — Optional build verifier. Fired ONCE per "completion claim"
+   * (model emits no tool calls AND state has accumulated edits earlier
+   * in the run). On build failure the runner injects the build output
+   * as a synthetic user message and loops, capped at 2 build-fix
+   * attempts (separate from the tsc/eslint cap). When absent, no build
+   * verification runs — same as pre-D-037 behaviour.
+   *
+   * Caller (agent-loop.ts) is expected to wire this only for paid
+   * tiers — `next build` is expensive on every run.
+   */
+  verifyBuild?: () => Promise<VerifyResult>
+  /**
+   * D-046 — Auto-inject runtime errors at turn start. Optional
+   * callback that returns recent unconsumed runtime errors. When
+   * present and returns a non-empty string, the runner pushes the
+   * formatted text as a synthetic user message before the next
+   * adapter call so the model sees "the preview reported these
+   * errors since your last turn" without the user having to ask.
+   *
+   * Returning empty string / undefined → no injection (the typical
+   * case when the preview is healthy).
+   */
+  loadRuntimeErrors?: () => Promise<string | undefined>
+  /**
+   * D-047 — Live context loader. Optional callback returning a
+   * formatted block describing what the user is currently looking at
+   * (active route + recently edited files). Injected as a synthetic
+   * user message at turn start; cheap because it's text-only.
+   *
+   * Returning empty/undefined → no injection.
+   */
+  loadLiveContext?: () => Promise<string | undefined>
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -144,6 +236,21 @@ interface RunState {
   totalOutputTokens: number
   /** D-027 — set true after the first auto-compaction; only one per run. */
   compacted?: boolean
+  /**
+   * D-036 — verification loop state. Tracks paths the agent has mutated
+   * since the last verification pass + how many auto-fix attempts have
+   * been spent in this run. Reset after each verification cycle.
+   */
+  pendingChangedPaths: Set<string>
+  autoFixCount: number
+  /**
+   * D-037 — build-verification state. `totalChangedPaths` accumulates
+   * across the whole run (never cleared) so we know whether the agent
+   * has touched any code at all when it claims completion.
+   * `buildFixCount` is the number of `next build` attempts spent.
+   */
+  totalChangedPaths: Set<string>
+  buildFixCount: number
 }
 
 export class AgentRunner {
@@ -230,6 +337,43 @@ export class AgentRunner {
         }
       }
 
+      // D-046 — auto-inject runtime errors. Best-effort: any failure in
+      // the loader is swallowed (the agent shouldn't fail because the
+      // ingest service is down). When the preview reports new errors
+      // since the last turn, push them as a synthetic user message so
+      // the model sees them without the user having to ask.
+      if (this.deps.loadRuntimeErrors) {
+        try {
+          const errorBlock = await this.deps.loadRuntimeErrors()
+          if (errorBlock && errorBlock.length > 0) {
+            state.messages.push({
+              role: "user",
+              content: `Runtime errors captured by the preview app since your last turn:\n\n${errorBlock}\n\nIf these look caused by your recent edits, fix them. If they look pre-existing, mention them in your response so the user knows.`,
+            })
+          }
+        } catch {
+          /* swallow — runtime-error capture is non-critical */
+        }
+      }
+
+      // D-047 — inject live context (active route + recent edits + open
+      // files). Cheap text-only block; helps the model know "the user is
+      // staring at /products/[id]" so a vague "this is broken" lands
+      // without a round-trip. Best-effort.
+      if (this.deps.loadLiveContext) {
+        try {
+          const liveBlock = await this.deps.loadLiveContext()
+          if (liveBlock && liveBlock.length > 0) {
+            state.messages.push({
+              role: "user",
+              content: liveBlock,
+            })
+          }
+        } catch {
+          /* swallow */
+        }
+      }
+
       const turn = await this.runTurn(input, state)
 
       // Adapter-level error → mark errored and stop.
@@ -237,8 +381,26 @@ export class AgentRunner {
         return this.markDone(input, state, "error", turn.errorMessage)
       }
 
-      // No tool calls — natural end of conversation.
+      // No tool calls — model is done with this turn. Run verification
+      // (D-036) before declaring the conversation complete. If
+      // verification fails and we have auto-fix budget left, inject the
+      // errors as a synthetic user message and continue. Otherwise
+      // mark done.
       if (turn.toolCalls.length === 0) {
+        const verifyOutcome = await this.maybeVerify(input, state)
+        if (verifyOutcome === "continue") {
+          // Synthetic message already pushed. Loop again.
+          // NOTE: state isn't checkpointed on this iteration since
+          // there were no tool calls. If Inngest retries between this
+          // synthetic-push and the next iteration, the synthetic
+          // message is lost — but the verifier will simply re-run on
+          // resume and re-push. Acceptable for v1.
+          state.iterationCount++
+          continue
+        }
+        if (verifyOutcome === "error") {
+          return // markDone already called inside maybeVerify
+        }
         return this.markDone(input, state, "completed")
       }
 
@@ -286,6 +448,13 @@ export class AgentRunner {
           iterationCount: cp.iterationCount,
           totalInputTokens: cp.totalInputTokens,
           totalOutputTokens: cp.totalOutputTokens,
+          // D-036 — verifier state never resumed; verification re-runs
+          // cleanly against whatever changes the resumed turn produces.
+          pendingChangedPaths: new Set<string>(),
+          autoFixCount: 0,
+          // D-037 — build-verification state likewise resets on resume.
+          totalChangedPaths: new Set<string>(),
+          buildFixCount: 0,
         }
       }
     }
@@ -295,6 +464,10 @@ export class AgentRunner {
       iterationCount: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      pendingChangedPaths: new Set<string>(),
+      autoFixCount: 0,
+      totalChangedPaths: new Set<string>(),
+      buildFixCount: 0,
     }
   }
 
@@ -372,7 +545,7 @@ export class AgentRunner {
 
   private async executeTools(
     input: AgentRunInput,
-    _state: RunState,
+    state: RunState,
     toolCalls: ToolCall[],
   ): Promise<ContentBlock[]> {
     const sandboxId = this.deps.sandboxId
@@ -381,6 +554,8 @@ export class AgentRunner {
     for (const tc of toolCalls) {
       const result = await this.deps.executor.execute(tc, ctx)
       await this.deps.sink.appendToolResult(input.messageId, tc.id, result)
+      // D-036 — track changed paths so the verifier can target them.
+      this.recordChangedPath(state, tc, result)
       blocks.push({
         type: "tool_result",
         toolUseId: tc.id,
@@ -389,6 +564,102 @@ export class AgentRunner {
       })
     }
     return blocks
+  }
+
+  /** D-036 — push the path of a successful mutating tool call into state. */
+  private recordChangedPath(
+    state: RunState,
+    tc: ToolCall,
+    result: ToolOutput,
+  ): void {
+    if (!result.ok) return
+    const mutating = [
+      "write_file",
+      "edit_file",
+      "multi_edit",
+      "create_file",
+      "delete_file",
+    ]
+    if (!mutating.includes(tc.name)) return
+    const path = (tc.input as { path?: unknown }).path
+    if (typeof path === "string" && path.length > 0) {
+      state.pendingChangedPaths.add(path)
+      // D-037 — accumulate across the full run for build-verification
+      // gating. Never cleared; if any edit happened, build runs at done.
+      state.totalChangedPaths.add(path)
+    }
+  }
+
+  /**
+   * D-036 — Run the verifier (if wired) over the agent's pending changed
+   * paths. Returns:
+   *   "completed" → all clear, caller should mark the run done
+   *   "continue"  → errors found and we have auto-fix budget; synthetic
+   *                  user message has been pushed onto state.messages
+   *   "error"     → errors found and budget exhausted; markDone(error)
+   *                  has already been called by this method
+   */
+  private async maybeVerify(
+    input: AgentRunInput,
+    state: RunState,
+  ): Promise<"completed" | "continue" | "error"> {
+    // Stage A — path-level verifier (tsc + eslint).
+    if (this.deps.verify && state.pendingChangedPaths.size > 0) {
+      const result = await this.deps.verify(state.pendingChangedPaths)
+      if (!result.ok) {
+        // Hit the cap — surface to the user.
+        if (state.autoFixCount >= MAX_AUTO_FIX_ATTEMPTS) {
+          await this.markDone(
+            input,
+            state,
+            "error",
+            `Auto-verification (${result.stage}) failed after ${MAX_AUTO_FIX_ATTEMPTS} fix attempts. Latest errors:\n\n${result.errors}`,
+          )
+          return "error"
+        }
+
+        // Inject errors as a synthetic user message and continue.
+        state.messages.push({
+          role: "user",
+          content: `Auto-verification (${result.stage}) found errors in your last edit batch. Fix them before reporting completion:\n\n${result.errors}\n\n(This is auto-fix attempt ${state.autoFixCount + 1}/${MAX_AUTO_FIX_ATTEMPTS}.)`,
+        })
+        state.pendingChangedPaths.clear()
+        state.autoFixCount++
+        return "continue"
+      }
+      // Path-level clean — drop pending and fall through to build stage.
+      state.pendingChangedPaths.clear()
+    }
+
+    // Stage B — build verification (D-037). Only fires when:
+    //   - verifyBuild dep is wired (caller decides per-tier policy)
+    //   - the agent has actually accumulated edits in this run
+    //   - we have build-fix budget remaining
+    if (
+      this.deps.verifyBuild &&
+      state.totalChangedPaths.size > 0
+    ) {
+      const buildResult = await this.deps.verifyBuild()
+      if (!buildResult.ok) {
+        if (state.buildFixCount >= MAX_BUILD_FIX_ATTEMPTS) {
+          await this.markDone(
+            input,
+            state,
+            "error",
+            `Build verification (next build) failed after ${MAX_BUILD_FIX_ATTEMPTS} attempts. Latest errors:\n\n${buildResult.errors}`,
+          )
+          return "error"
+        }
+        state.messages.push({
+          role: "user",
+          content: `Build verification (next build) failed before completion. Fix the build, then verify with \`run_command: npx next build\`.\n\nOutput:\n\n${buildResult.errors}\n\n(This is build-fix attempt ${state.buildFixCount + 1}/${MAX_BUILD_FIX_ATTEMPTS}.)`,
+        })
+        state.buildFixCount++
+        return "continue"
+      }
+    }
+
+    return "completed"
   }
 
   // ── Termination helpers ─────────────────────────────────────────────────────

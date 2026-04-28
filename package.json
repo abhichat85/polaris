@@ -18,7 +18,8 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
     "test:eval": "vitest run tests/eval",
-    "test:eval:live": "tsx scripts/eval-live.ts"
+    "test:eval:live": "tsx scripts/eval-live.ts",
+    "test:eval:real": "tsx scripts/eval-real.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.9",

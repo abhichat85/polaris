@@ -237,6 +237,133 @@ export const updateExportStatus = mutation({
     });
   },
 });
+// ── Verification settings (D-038) ───────────────────────────────────────────
+// Per-project overrides for the agent verification loop (D-036, D-037).
+// Settings are sparse: any field omitted falls through to the tier default
+// resolved by agent-loop.ts at run start (Free → all off, Pro/Team → all on).
+
+export const setVerificationSettings = mutation({
+  args: {
+    id: v.id("projects"),
+    typecheck: v.optional(v.boolean()),
+    lint: v.optional(v.boolean()),
+    build: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized access to this project")
+    }
+    // Build a sparse update — only include fields that were passed in so
+    // we never accidentally clobber an existing value with `undefined`.
+    const next: { typecheck?: boolean; lint?: boolean; build?: boolean } = {}
+    if (args.typecheck !== undefined) next.typecheck = args.typecheck
+    if (args.lint !== undefined) next.lint = args.lint
+    if (args.build !== undefined) next.build = args.build
+
+    await ctx.db.patch(args.id, {
+      verification: { ...(project.verification ?? {}), ...next },
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const getVerificationSettings = query({
+  args: { id: v.id("projects") },
+  returns: v.object({
+    typecheck: v.optional(v.boolean()),
+    lint: v.optional(v.boolean()),
+    build: v.optional(v.boolean()),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized access to this project")
+    }
+    return project.verification ?? {}
+  },
+})
+
+// ── Live context (D-044) ─────────────────────────────────────────────────────
+// IDE writes activeRoute on path change; tool executor pushes recentEdits
+// after each successful agent edit. The runner reads these fields at turn
+// start to inject "what the user is currently looking at" (D-047).
+
+const MAX_ACTIVE_FILES = 5
+const MAX_RECENT_EDITS = 10
+
+export const setActiveRoute = mutation({
+  args: { id: v.id("projects"), route: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) throw new Error("Unauthorized")
+    await ctx.db.patch(args.id, {
+      activeRoute: args.route,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const pushActiveFile = mutation({
+  args: { id: v.id("projects"), path: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) throw new Error("Unauthorized")
+    const existing = (project.activeFiles ?? []).filter((p) => p !== args.path)
+    const next = [args.path, ...existing].slice(0, MAX_ACTIVE_FILES)
+    await ctx.db.patch(args.id, {
+      activeFiles: next,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const recordRecentEditInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    id: v.id("projects"),
+    path: v.string(),
+    at: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const expected = process.env.POLARIS_CONVEX_INTERNAL_KEY
+    if (!expected || args.internalKey !== expected) {
+      throw new Error("invalid_internal_key")
+    }
+    const project = await ctx.db.get(args.id)
+    if (!project) return
+    const at = args.at ?? Date.now()
+    const existing = (project.recentEdits ?? []).filter((e) => e.path !== args.path)
+    const next = [{ path: args.path, at }, ...existing].slice(0, MAX_RECENT_EDITS)
+    await ctx.db.patch(args.id, { recentEdits: next })
+  },
+})
+
+export const getLiveContextInternal = query({
+  args: { internalKey: v.string(), id: v.id("projects") },
+  handler: async (ctx, args) => {
+    const expected = process.env.POLARIS_CONVEX_INTERNAL_KEY
+    if (!expected || args.internalKey !== expected) {
+      throw new Error("invalid_internal_key")
+    }
+    const project = await ctx.db.get(args.id)
+    if (!project) return null
+    return {
+      activeRoute: project.activeRoute ?? null,
+      activeFiles: project.activeFiles ?? [],
+      recentEdits: project.recentEdits ?? [],
+    }
+  },
+})
+
 // ── Internal-key-gated mutations for Inngest GitHub workflows ───────────────
 // Authority: sub-plan 06 Task 11.
 
