@@ -55,6 +55,27 @@ export const agentLoop = inngest.createFunction(
       // Cancel an in-flight run when the client posts to /api/messages/cancel.
       { event: "agent/cancel", if: "event.data.messageId == async.data.messageId" },
     ],
+    /**
+     * onFailure fires after all retries are exhausted.
+     * Without this, a crashed agentLoop leaves the assistant message in
+     * `status: "processing"` forever — UI shows "Thinking…" indefinitely.
+     */
+    onFailure: async ({ event, error, step }) => {
+      const originalData = event.data.event.data as AgentRunEvent
+
+      const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
+      const internalKey = process.env.POLARIS_CONVEX_INTERNAL_KEY
+      if (!convexUrl || !internalKey || !originalData?.messageId) return
+
+      const convex = new ConvexHttpClient(convexUrl)
+      await step.run("surface-agent-failure", async () => {
+        await convex.mutation(api.system.updateMessageContent, {
+          internalKey,
+          messageId: originalData.messageId as Id<"messages">,
+          content: `⚠️ Agent run failed: ${error?.message ?? "Unknown error"}. Please try again.`,
+        })
+      })
+    },
   },
   { event: "agent/run" },
   async ({ event, attempt }) => {

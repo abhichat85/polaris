@@ -32,9 +32,10 @@ export async function POST(request: Request) {
     const { messageId } = requestSchema.parse(body);
 
     try {
-        // Send cancel event to Inngest
+        // Send cancel event to Inngest so agentLoop's cancelOn fires.
+        // agentLoop listens for "agent/cancel"; "message/cancel" was wrong.
         await inngest.send({
-            name: "message/cancel",
+            name: "agent/cancel",
             data: {
                 messageId: messageId as Id<"messages">,
             },

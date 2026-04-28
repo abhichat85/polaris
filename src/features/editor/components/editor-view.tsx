@@ -53,7 +53,7 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
     // Praxiom — editor canvas sits on surface-0 (deepest level)
     <div className="flex-1 min-h-0 bg-surface-0 h-full flex flex-col">
       {activeTabId && <FileBreadcrumbs projectId={projectId} />}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-hidden">
         {!activeFile && (
           <div className="size-full flex items-center justify-center">
             <Image
@@ -98,10 +98,10 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Tab bar — surface-1 (one step lighter than editor canvas surface-0) */}
-      <div className="flex items-center bg-surface-1 h-9 shrink-0">
+      {/* Tab bar — surface-1, border-b consistent with all panel headers */}
+      <div className="flex items-center bg-surface-1 h-10 shrink-0 border-b border-surface-3/60">
         <TopNavigation projectId={projectId} />
-        <div className="flex items-center px-2 h-full">
+        <div className="flex items-center px-2 h-full ml-auto">
           <Button
             variant={showPreview ? "secondary" : "ghost"}
             size="icon-xs"

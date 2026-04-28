@@ -32,9 +32,15 @@ export class ConvexAgentSink implements AgentSink {
   constructor(private readonly deps: ConvexAgentSinkDeps) {}
 
   async loadInitialMessages(conversationId: string): Promise<ConversationMessage[]> {
-    const messages = await this.deps.convex.query(api.conversations.getMessages, {
-      conversationId: conversationId as Id<"conversations">,
-    })
+    // Use the internal-key variant — this runs inside Inngest (no Clerk token).
+    // api.conversations.getMessages requires verifyAuth() → Unauthorized.
+    const messages = await this.deps.convex.query(
+      api.system.getConversationMessages,
+      {
+        internalKey: this.deps.internalKey,
+        conversationId: conversationId as Id<"conversations">,
+      },
+    )
     return messages.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,

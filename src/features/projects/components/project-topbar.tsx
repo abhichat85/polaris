@@ -1,12 +1,10 @@
 "use client";
 
 /**
- * ProjectTopbar — slim header above the IDE 3-pane.
+ * ProjectTopbar — refined header above the IDE 3-pane.
  *
- * The full-height left rail already carries the brand and identity, so the
- * topbar is just contextual: project name (with inline rename), save state,
- * and the GitHub export action. Praxiom §4.4 — h-14 was bigger than needed
- * once the rail took over branding; we drop to h-12 here.
+ * Elevated to Praxiom design standard: breadcrumb-style project identity,
+ * subtle save-state chip, and a clean right-side action cluster.
  */
 
 import { useState } from "react";
@@ -19,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { Id } from "../../../../convex/_generated/dataModel";
 import { useProject, useRenameProject } from "../hooks/use-projects";
@@ -54,9 +53,18 @@ export const ProjectTopbar = ({ projectId, onOpenExport }: Props) => {
     else if (e.key === "Escape") setIsRenaming(false);
   };
 
+  const isSaving = project?.importStatus === "importing";
+
   return (
-    <header className="h-12 px-3 flex items-center justify-between bg-surface-1 shrink-0">
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="h-10 px-3 flex items-center justify-between bg-surface-1 shrink-0 border-b border-surface-3/60">
+      {/* Left: Project identity */}
+      <div className="flex items-center gap-2 min-w-0">
+        {/* Breadcrumb prefix — muted "Projects /" */}
+        <span className="text-xs text-muted-foreground/50 font-medium shrink-0 hidden sm:block">
+          Projects
+        </span>
+        <span className="text-muted-foreground/30 text-xs shrink-0 hidden sm:block">/</span>
+
         {isRenaming ? (
           <input
             autoFocus
@@ -66,48 +74,56 @@ export const ProjectTopbar = ({ projectId, onOpenExport }: Props) => {
             onFocus={(e) => e.currentTarget.select()}
             onBlur={handleSubmit}
             onKeyDown={handleKeyDown}
-            className="font-heading text-sm font-semibold tracking-[-0.01em] bg-transparent text-foreground outline-none focus:ring-1 focus:ring-inset focus:ring-primary max-w-60 truncate"
+            className="font-heading text-sm font-semibold tracking-[-0.02em] bg-transparent text-foreground outline-none focus:ring-1 focus:ring-inset focus:ring-primary max-w-52 rounded px-1"
           />
         ) : (
           <button
             type="button"
             onClick={handleStartRename}
-            className="font-heading text-sm font-semibold tracking-[-0.01em] text-foreground hover:text-primary transition-colors max-w-60 truncate"
+            className="font-heading text-sm font-semibold tracking-[-0.02em] text-foreground hover:text-primary transition-colors max-w-52 truncate"
           >
             {project?.name ?? "Loading…"}
           </button>
         )}
 
-        {project?.importStatus === "importing" ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <LoaderIcon className="size-3.5 text-muted-foreground animate-spin" />
-            </TooltipTrigger>
-            <TooltipContent>Importing…</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <CloudCheckIcon className="size-3.5 text-muted-foreground" />
-            </TooltipTrigger>
-            <TooltipContent>
-              Saved
-              {project?.updatedAt
-                ? ` ${formatDistanceToNow(project.updatedAt, { addSuffix: true })}`
-                : "…"}
-            </TooltipContent>
-          </Tooltip>
-        )}
+        {/* Save state indicator */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                "flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors",
+                isSaving
+                  ? "text-warning"
+                  : "text-muted-foreground/40 hover:text-muted-foreground/70",
+              )}
+            >
+              {isSaving ? (
+                <LoaderIcon className="size-3 animate-spin" />
+              ) : (
+                <CloudCheckIcon className="size-3" />
+              )}
+              <span className="hidden md:block">
+                {isSaving ? "Saving…" : "Saved"}
+              </span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            {isSaving
+              ? "Importing…"
+              : `Saved${project?.updatedAt ? ` ${formatDistanceToNow(project.updatedAt, { addSuffix: true })}` : "…"}`}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      {/* Right: actions */}
+      <div className="flex items-center gap-1">
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 text-muted-foreground hover:text-foreground hidden sm:flex"
+          className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5 hidden sm:flex"
           onClick={onOpenExport}
         >
-          <GithubIcon className="size-3.5 mr-1.5" />
+          <GithubIcon className="size-3.5" />
           Export
         </Button>
       </div>

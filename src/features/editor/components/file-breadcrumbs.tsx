@@ -38,9 +38,9 @@ export const FileBreadcrumbs = ({
   }
 
   return (
-    <div className="p-2 bg-background pl-4 border-b">
+    <div className="px-4 py-1.5 bg-surface-0 border-b border-surface-3/40 flex items-center">
       <Breadcrumb>
-        <BreadcrumbList className="sm:gap-0.5 gap-0.5">
+        <BreadcrumbList className="sm:gap-0.5 gap-0.5 text-xs">
           {filePath.map((item, index) => {
             const isLast = index === filePath.length - 1;
 

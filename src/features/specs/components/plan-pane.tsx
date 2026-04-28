@@ -85,28 +85,36 @@ export const PlanPane = ({ projectId }: Props) => {
 
   return (
     <div className="h-full flex flex-col bg-surface-1 overflow-hidden">
-      {/* Header */}
-      <div className="px-3 pt-3 pb-2 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-            Plan
+      {/* Praxiom-quality panel header */}
+      <div className="h-10 px-3 flex items-center justify-between shrink-0 border-b border-surface-3/60">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50 shrink-0">
+            Build Plan
           </span>
-          <span className="text-surface-4">·</span>
-          <span className="text-[10px] font-mono tabular-nums text-muted-foreground/70">
+          <span className="text-surface-3 shrink-0">·</span>
+          <span className="text-[10px] font-mono tabular-nums text-muted-foreground/60 shrink-0">
             {done}/{total}
           </span>
         </div>
-        <h2 className="font-heading text-sm font-semibold text-foreground tracking-[-0.01em] mt-1 truncate">
+        {/* Inline progress pill */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="w-16 h-1 rounded-full bg-surface-3 overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-500"
+              style={{ width: `${pct}%` }}
+              aria-hidden
+            />
+          </div>
+          <span className="text-[10px] font-mono tabular-nums text-muted-foreground/50">
+            {Math.round(pct)}%
+          </span>
+        </div>
+      </div>
+      {/* Plan title */}
+      <div className="px-3 py-2 shrink-0 border-b border-surface-3/30">
+        <h2 className="font-heading text-sm font-semibold text-foreground tracking-[-0.02em] truncate">
           {plan.title ?? "Build plan"}
         </h2>
-        {/* progress bar */}
-        <div className="mt-2 h-1 rounded-full bg-surface-3 overflow-hidden">
-          <div
-            className="h-full bg-primary transition-all duration-500"
-            style={{ width: `${pct}%` }}
-            aria-hidden
-          />
-        </div>
       </div>
 
       {/* Sprints */}

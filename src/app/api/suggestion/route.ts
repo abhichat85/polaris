@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       .replace("{lineNumber}", lineNumber.toString());
 
     const response = await anthropic.messages.create({
-      model: "claude-3-7-sonnet-20250219",
+      model: "claude-haiku-3-5-20241022",
       max_tokens: 512,
       messages: [{ role: "user", content: prompt }],
     });

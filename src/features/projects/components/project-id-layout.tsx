@@ -28,13 +28,13 @@ import { ProjectTopbar } from "./project-topbar";
 import { GitHubDialog } from "./github-dialog";
 import { Id } from "../../../../convex/_generated/dataModel";
 
-const LEFT_DEFAULT = 320;
-const LEFT_MIN = 240;
-const LEFT_MAX = 560;
+const LEFT_DEFAULT = 300;
+const LEFT_MIN = 220;
+const LEFT_MAX = 520;
 
-const AGENT_DEFAULT = 400;
-const AGENT_MIN = 320;
-const AGENT_MAX = 720;
+const AGENT_DEFAULT = 360;
+const AGENT_MIN = 300;
+const AGENT_MAX = 680;
 
 /**
  * What's showing in the left pane:

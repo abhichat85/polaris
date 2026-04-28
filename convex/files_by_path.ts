@@ -80,6 +80,48 @@ async function walkTree(
   return cur
 }
 
+/**
+ * Walks the directory segments, finding or creating folder nodes along the way.
+ * Returns the `parentId` that a file at `dirSegments` depth should use.
+ * Returns `undefined` for files at the project root.
+ */
+async function ensureFolderPath(
+  db: DbHandle,
+  projectId: Id<"projects">,
+  dirSegments: string[],
+  updatedBy: string,
+): Promise<Id<"files"> | undefined> {
+  let parentId: Id<"files"> | undefined = undefined
+  for (const seg of dirSegments) {
+    if (!seg) continue
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const matches = (await db
+      .query("files")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .withIndex("by_project_parent", (q: any) =>
+        q.eq("projectId", projectId).eq("parentId", parentId),
+      )
+      .collect()) as Doc<"files">[]
+
+    const existing = matches.find((m) => m.name === seg && m.type === "folder")
+    if (existing) {
+      parentId = existing._id
+    } else {
+      // Create the missing folder node.
+      const data: Record<string, unknown> = {
+        projectId,
+        name: seg,
+        type: "folder",
+        updatedAt: Date.now(),
+        updatedBy,
+      }
+      if (parentId !== undefined) data.parentId = parentId
+      parentId = await db.insert("files", data)
+    }
+  }
+  return parentId
+}
+
 // ── Public Convex functions ──────────────────────────────────────────────────
 
 export const readPath = query({
@@ -140,11 +182,14 @@ export const createPath = mutation({
     if (existing) throw new Error(`File already exists: ${args.path}`)
 
     const path = normalize(args.path)
-    const segments = path.split("/")
+    const segments = path.split("/").filter(Boolean)
     const name = segments[segments.length - 1] ?? path
+    const dirSegments = segments.slice(0, -1)
 
     const db = getDb(ctx)
-    return await db.insert("files", {
+    const parentId = await ensureFolderPath(db, args.projectId, dirSegments, args.updatedBy)
+
+    const data: Record<string, unknown> = {
       projectId: args.projectId,
       name,
       type: "file",
@@ -152,7 +197,9 @@ export const createPath = mutation({
       path,
       updatedAt: Date.now(),
       updatedBy: args.updatedBy,
-    })
+    }
+    if (parentId !== undefined) data.parentId = parentId
+    return await db.insert("files", data)
   },
 })
 
@@ -194,7 +241,7 @@ export const writeMany = mutation({
     for (const f of args.files) {
       const existing = await findByPath(ctx, args.projectId, f.path)
       const path = normalize(f.path)
-      const segments = path.split("/")
+      const segments = path.split("/").filter(Boolean)
       const name = segments[segments.length - 1] ?? path
       if (existing && existing.type === "file") {
         await db.patch(existing._id, {
@@ -205,7 +252,9 @@ export const writeMany = mutation({
         })
         updated++
       } else if (!existing) {
-        await db.insert("files", {
+        const dirSegments = segments.slice(0, -1)
+        const parentId = await ensureFolderPath(db, args.projectId, dirSegments, args.updatedBy)
+        const data: Record<string, unknown> = {
           projectId: args.projectId,
           name,
           type: "file",
@@ -213,11 +262,52 @@ export const writeMany = mutation({
           path,
           updatedAt: now,
           updatedBy: args.updatedBy,
-        })
+        }
+        if (parentId !== undefined) data.parentId = parentId
+        await db.insert("files", data)
         created++
       }
     }
     return { created, updated, total: args.files.length }
+  },
+})
+
+/**
+ * One-time migration: finds all files that have a `path` field but no
+ * `parentId` set, then backfills the folder hierarchy so the tree renders
+ * correctly in the file explorer.
+ *
+ * Safe to call multiple times — already-correct rows are skipped.
+ * Authority: fix for flat-file-tree bug (D-FIX-001).
+ */
+export const backfillFilePaths = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const db = getDb(ctx)
+    const all = (await db
+      .query("files")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect()) as Doc<"files">[]
+
+    let fixed = 0
+    for (const f of all) {
+      // Only backfill files that have a path but no parentId (orphaned flat files).
+      if (f.type !== "file") continue
+      if (!f.path) continue
+      if (f.parentId !== undefined) continue // already has a parent, skip
+
+      const segments = f.path.split("/").filter(Boolean)
+      if (segments.length <= 1) continue // root-level file, no folder needed
+
+      const dirSegments = segments.slice(0, -1)
+      const parentId = await ensureFolderPath(db, args.projectId, dirSegments, f.updatedBy ?? "agent")
+      if (parentId !== undefined) {
+        await db.patch(f._id, { parentId })
+        fixed++
+      }
+    }
+    return { fixed, total: all.filter((f) => f.type === "file" && f.path).length }
   },
 })
 

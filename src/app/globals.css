@@ -306,6 +306,23 @@
 }
 
 /* -------------------------------------------------------------------------
+   5b. ALLOTMENT SASH — Praxiom §4.5 panel dividers
+       Minimal 1px rule, primary-tinted on hover, never obtrusive.
+   ------------------------------------------------------------------------- */
+.split-view-view .sash-container .sash {
+  background: transparent !important;
+  transition: background 0.15s;
+}
+.split-view-view .sash-container .sash:hover,
+.split-view-view .sash-container .sash.active {
+  background: hsl(var(--surface-3)) !important;
+}
+/* The visible 1px line between panes */
+.split-view-view:not(:first-child)::before {
+  background: hsl(var(--surface-3) / 0.6) !important;
+}
+
+/* -------------------------------------------------------------------------
    6. ANIMATIONS (Praxiom §9.2) — operational, restrained, never playful
    ------------------------------------------------------------------------- */
 @theme inline {
@@ -487,4 +504,82 @@
   outline: 2px solid hsl(var(--primary));
   outline-offset: 2px;
   border-radius: 8px;
+}
+
+/* -------------------------------------------------------------------------
+   8. STREAMDOWN MARKDOWN — Praxiom §8 agent message prose
+      Ensures rendered markdown in the agent panel is readable, compact,
+      and consistent with the design system. No Tailwind prose plugin needed.
+   ------------------------------------------------------------------------- */
+.streamdown-content p {
+  line-height: 1.65;
+  margin-bottom: 0.5em;
+}
+.streamdown-content p:last-child {
+  margin-bottom: 0;
+}
+.streamdown-content h1,
+.streamdown-content h2,
+.streamdown-content h3,
+.streamdown-content h4 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 1em;
+  margin-bottom: 0.25em;
+  color: hsl(var(--foreground));
+}
+.streamdown-content h1 { font-size: 1rem; }
+.streamdown-content h2 { font-size: 0.9rem; }
+.streamdown-content h3 { font-size: 0.825rem; }
+.streamdown-content code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  background: hsl(var(--surface-3) / 0.7);
+  color: hsl(var(--foreground) / 0.9);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.streamdown-content pre {
+  background: hsl(var(--surface-2));
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.streamdown-content pre code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: hsl(var(--foreground) / 0.85);
+}
+.streamdown-content ul,
+.streamdown-content ol {
+  padding-left: 1.25em;
+  margin: 0.25em 0 0.5em;
+}
+.streamdown-content li {
+  margin-bottom: 0.2em;
+  line-height: 1.55;
+}
+.streamdown-content blockquote {
+  border-left: 2px solid hsl(var(--surface-4));
+  padding-left: 0.75em;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+  margin: 0.5em 0;
+}
+.streamdown-content hr {
+  border: none;
+  border-top: 1px solid hsl(var(--surface-3));
+  margin: 0.75em 0;
+}
+.streamdown-content strong {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+.streamdown-content a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

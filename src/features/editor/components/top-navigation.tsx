@@ -37,7 +37,7 @@ const Tab = ({
         // Praxiom — tabs use surface contrast (no borders).
         // Inactive: muted-foreground on surface-1 nav, hover lifts to surface-2.
         // Active: surface-0 (= main editor bg) + foreground text — appears "carved out".
-        "flex items-center gap-2 h-8.75 pl-2 pr-1.5 cursor-pointer text-muted-foreground group transition-colors hover:bg-surface-2",
+        "flex items-center gap-1.5 h-10 pl-3 pr-2 cursor-pointer text-muted-foreground/70 group transition-colors hover:bg-surface-2 hover:text-muted-foreground text-xs",
         isActive && "bg-surface-0 text-foreground hover:bg-surface-0",
       )}
     >
@@ -87,7 +87,7 @@ export const TopNavigation = ({
   return (
     <ScrollArea className="flex-1">
       {/* Praxiom — tab bar uses surface-1 (matches sidebar/top header level) */}
-      <nav className="bg-surface-1 flex items-center h-8.75">
+      <nav className="bg-surface-1 flex items-center h-10">
         {openTabs.map((fileId) => (
           <Tab
             key={fileId}

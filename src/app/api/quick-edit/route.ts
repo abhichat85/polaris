@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       .replace("{documentation}", documentationContext);
 
     const response = await anthropic.messages.create({
-      model: "claude-3-7-sonnet-20250219",
+      model: "claude-sonnet-4-5",
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });

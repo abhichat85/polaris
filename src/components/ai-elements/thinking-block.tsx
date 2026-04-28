@@ -4,8 +4,8 @@
  * D-024 — Thinking block. Renders Claude's extended-thinking text inside
  * a collapsible <details> block above the assistant message body.
  *
- * Praxiom design: muted-foreground italic, no border, only surface
- * contrast to set it apart from the main message.
+ * Praxiom design: muted surface-2 background, minimal border-l accent,
+ * italic monospace content — clearly secondary to the main response.
  */
 
 import { ChevronRightIcon, BrainIcon } from "lucide-react"
@@ -24,27 +24,30 @@ export const ThinkingBlock = ({ thinking, defaultOpen = false }: Props) => {
   return (
     <details
       open={defaultOpen}
-      className={cn(
-        "group/thinking rounded-md bg-surface-2 px-3 py-2 mb-2",
-        "transition-colors hover:bg-surface-3/60",
-      )}
+      className="group/thinking mb-2"
     >
-      <summary className="flex items-center gap-2 cursor-pointer list-none select-none">
-        <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open/thinking:rotate-90" />
-        <BrainIcon className="size-3.5 text-muted-foreground" />
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <summary className="flex items-center gap-1.5 cursor-pointer list-none select-none text-muted-foreground/60 hover:text-muted-foreground/90 transition-colors">
+        <ChevronRightIcon className="size-3 transition-transform group-open/thinking:rotate-90 shrink-0" />
+        <BrainIcon className="size-3 shrink-0" />
+        <span className="text-[10px] font-semibold uppercase tracking-widest">
           Thinking
         </span>
       </summary>
-      <pre
+      <div
         className={cn(
-          "mt-2 whitespace-pre-wrap font-mono text-[11px] leading-relaxed",
-          "text-muted-foreground/85 italic",
-          "max-h-72 overflow-y-auto scrollbar-thin",
+          "mt-2 ml-3 pl-3 border-l-2 border-surface-4",
         )}
       >
-        {thinking}
-      </pre>
+        <pre
+          className={cn(
+            "whitespace-pre-wrap font-mono text-[10px] leading-relaxed",
+            "text-muted-foreground/60 italic",
+            "max-h-56 overflow-y-auto scrollbar-thin",
+          )}
+        >
+          {thinking}
+        </pre>
+      </div>
     </details>
   )
 }

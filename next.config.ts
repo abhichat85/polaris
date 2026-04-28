@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
    * Scoped to /projects/* so marketing / auth pages are unaffected.
    *
    * Docs: https://webcontainers.io/guides/browser-support
+   *
+   * Note: @codemirror/state deduplication is handled via pnpm.overrides in
+   * package.json (forces all packages to share the same 6.5.3 instance).
+   * This prevents the "Unrecognized extension value … multiple instances of
+   * @codemirror/state" runtime error in the code editor.
    */
   async headers() {
     return [

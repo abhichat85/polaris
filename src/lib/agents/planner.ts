@@ -37,7 +37,7 @@ export interface PlannerOutput {
   cacheReadInputTokens: number
 }
 
-const DEFAULT_MODEL = "claude-sonnet-4-6-20251015"
+const DEFAULT_MODEL = "claude-sonnet-4-5"
 const MAX_OUTPUT_TOKENS = 8_000
 const TIMEOUT_MS = 5 * 60_000
 

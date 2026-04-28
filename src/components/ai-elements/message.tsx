@@ -14,9 +14,18 @@ import {
 import { cn } from "@/lib/utils";
 import type { FileUIPart, UIMessage } from "./types";
 import {
+  BookOpenIcon,
+  CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  FileIcon,
+  FilePlusIcon,
+  FolderIcon,
+  FolderOpenIcon,
   PaperclipIcon,
+  SearchIcon,
+  Trash2Icon,
+  WrenchIcon,
   XIcon,
 } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
@@ -30,8 +39,8 @@ export type MessageProps = HTMLAttributes<HTMLDivElement> & {
 export const Message = ({ className, from, ...props }: MessageProps) => (
   <div
     className={cn(
-      "group flex w-full max-w-[95%] flex-col gap-2",
-      from === "user" ? "is-user ml-auto justify-end" : "is-assistant",
+      "group flex w-full flex-col gap-1.5 animate-[fade-in-up_0.2s_ease-out]",
+      from === "user" ? "is-user ml-auto justify-end max-w-[85%]" : "is-assistant",
       className
     )}
     {...props}
@@ -47,9 +56,11 @@ export const MessageContent = ({
 }: MessageContentProps) => (
   <div
     className={cn(
-      "is-user:dark flex w-fit max-w-full min-w-0 flex-col gap-2 overflow-hidden text-sm",
-      "group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground",
-      "group-[.is-assistant]:text-foreground",
+      "flex w-fit max-w-full min-w-0 flex-col gap-2 overflow-hidden text-sm",
+      // User message: compact rounded bubble, slightly elevated surface
+      "group-[.is-user]:ml-auto group-[.is-user]:rounded-xl group-[.is-user]:bg-surface-3 group-[.is-user]:px-3.5 group-[.is-user]:py-2.5 group-[.is-user]:text-foreground",
+      // Assistant: flush left, no bubble background
+      "group-[.is-assistant]:text-foreground/90",
       className
     )}
     {...props}
@@ -65,7 +76,13 @@ export const MessageActions = ({
   children,
   ...props
 }: MessageActionsProps) => (
-  <div className={cn("flex items-center gap-1", className)} {...props}>
+  <div
+    className={cn(
+      "flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity",
+      className,
+    )}
+    {...props}
+  >
     {children}
   </div>
 );
@@ -80,17 +97,27 @@ export const MessageAction = ({
   children,
   label,
   variant = "ghost",
-  size = "icon-sm",
+  size,
   ...props
 }: MessageActionProps) => {
   const button = (
-    <Button size={size} type="button" variant={variant} {...props}>
+    <Button
+      size={size ?? (label ? "sm" : "icon-sm")}
+      type="button"
+      variant={variant}
+      className={label ? "h-6 gap-1 text-xs text-muted-foreground hover:text-foreground px-2" : undefined}
+      {...props}
+    >
       {children}
-      <span className="sr-only">{label || tooltip}</span>
+      {label ? (
+        <span className="font-medium">{label}</span>
+      ) : (
+        <span className="sr-only">{tooltip}</span>
+      )}
     </Button>
   );
 
-  if (tooltip) {
+  if (tooltip && !label) {
     return (
       <TooltipProvider>
         <Tooltip>
@@ -310,7 +337,7 @@ export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        "streamdown-content size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
       {...props}
@@ -471,24 +498,26 @@ export type MessageToolCallsProps = HTMLAttributes<HTMLDivElement> & {
   toolCalls: ToolCall[];
 };
 
-const toolNameIcons: Record<string, string> = {
-  read_file: "📖",
-  write_file: "✏️",
-  create_file: "📄",
-  create_folder: "📁",
-  delete_file: "🗑️",
-  list_directory: "📂",
-  search_files: "🔍",
+type ToolIconComponent = React.ElementType;
+
+const toolIconMap: Record<string, ToolIconComponent> = {
+  read_file: BookOpenIcon,
+  write_file: FileIcon,
+  create_file: FilePlusIcon,
+  create_folder: FolderIcon,
+  delete_file: Trash2Icon,
+  list_directory: FolderOpenIcon,
+  search_files: SearchIcon,
 };
 
 const toolNameLabels: Record<string, string> = {
-  read_file: "Reading file",
-  write_file: "Writing file",
+  read_file: "Reading",
+  write_file: "Writing",
   create_file: "Creating file",
   create_folder: "Creating folder",
-  delete_file: "Deleting file",
-  list_directory: "Listing directory",
-  search_files: "Searching files",
+  delete_file: "Deleting",
+  list_directory: "Listing",
+  search_files: "Searching",
 };
 
 export const MessageToolCalls = ({
@@ -503,43 +532,47 @@ export const MessageToolCalls = ({
   return (
     <div
       className={cn(
-        "flex flex-col gap-1.5 rounded-lg bg-muted/50 p-2 text-xs",
+        "flex flex-col gap-px rounded-lg overflow-hidden bg-surface-2/60 border border-surface-3/50",
         className
       )}
       {...props}
     >
-      {toolCalls.map((tool) => (
-        <div
-          key={tool.id}
-          className={cn(
-            "flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors",
-            tool.status === "running" && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-            tool.status === "completed" && "bg-green-500/10 text-green-600 dark:text-green-400",
-            tool.status === "error" && "bg-red-500/10 text-red-600 dark:text-red-400"
-          )}
-        >
-          <span className="shrink-0">
-            {toolNameIcons[tool.name] || "🔧"}
-          </span>
-          <span className="font-medium">
-            {toolNameLabels[tool.name] || tool.name}
-          </span>
-          {typeof tool.args?.path === 'string' && (
-            <span className="truncate text-muted-foreground font-mono text-[10px]">
-              {tool.args.path}
+      {toolCalls.map((tool) => {
+        const ToolIcon = toolIconMap[tool.name] ?? WrenchIcon;
+        const label = toolNameLabels[tool.name] ?? tool.name;
+        const pathArg = typeof tool.args?.path === "string" ? tool.args.path : null;
+
+        return (
+          <div
+            key={tool.id}
+            className={cn(
+              "flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors",
+              tool.status === "running" && "text-primary bg-primary/5",
+              tool.status === "completed" && "text-muted-foreground",
+              tool.status === "error" && "text-destructive bg-destructive/5",
+            )}
+          >
+            <ToolIcon className="size-3 shrink-0 opacity-70" />
+            <span className="font-medium shrink-0">{label}</span>
+            {pathArg && (
+              <span className="truncate font-mono text-[10px] text-muted-foreground/70 min-w-0">
+                {pathArg}
+              </span>
+            )}
+            <span className="ml-auto shrink-0">
+              {tool.status === "running" && (
+                <span className="size-1.5 rounded-full bg-primary block animate-pulse" />
+              )}
+              {tool.status === "completed" && (
+                <CheckIcon className="size-3 text-success" />
+              )}
+              {tool.status === "error" && (
+                <XIcon className="size-3 text-destructive" />
+              )}
             </span>
-          )}
-          {tool.status === "running" && (
-            <span className="ml-auto shrink-0 animate-pulse">●</span>
-          )}
-          {tool.status === "completed" && (
-            <span className="ml-auto shrink-0">✓</span>
-          )}
-          {tool.status === "error" && (
-            <span className="ml-auto shrink-0">✗</span>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -549,9 +582,9 @@ export type MessageFileChangesProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 const operationStyles: Record<FileChange["operation"], string> = {
-  created: "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30",
-  updated: "bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/30",
-  deleted: "bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/30",
+  created: "bg-success/10 text-success",
+  updated: "bg-primary/10 text-primary",
+  deleted: "bg-destructive/10 text-destructive",
 };
 
 const operationLabels: Record<FileChange["operation"], string> = {
@@ -578,7 +611,7 @@ export const MessageFileChanges = ({
         <span
           key={`${change.fileId}-${index}`}
           className={cn(
-            "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+            "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium",
             operationStyles[change.operation]
           )}
         >
@@ -610,16 +643,26 @@ export const MessageProcessing = ({
 
   return (
     <div className={cn("flex flex-col gap-2", className)} {...props}>
-      {/* Show tool calls if any */}
+      {/* Tool call activity */}
       {hasToolCalls && <MessageToolCalls toolCalls={toolCalls} />}
 
-      {/* Show streaming content if any */}
+      {/* Streaming text or ambient thinking indicator */}
       {hasContent ? (
         <MessageResponse>{streamingContent}</MessageResponse>
       ) : !hasToolCalls ? (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="size-2 rounded-full bg-blue-500 animate-pulse" />
-          <span>Thinking...</span>
+        // Praxiom-quality "thinking" pill — three animated dots, no text clutter
+        <div className="flex items-center gap-1.5 px-0.5 py-1 text-muted-foreground/60">
+          {[0, 160, 320].map((delay) => (
+            <span
+              key={delay}
+              className="size-1.5 rounded-full bg-primary/60"
+              style={{
+                animation: "pulse-dot 1.4s ease-out infinite",
+                animationDelay: `${delay}ms`,
+              }}
+            />
+          ))}
+          <span className="text-xs ml-1">Thinking</span>
         </div>
       ) : null}
     </div>

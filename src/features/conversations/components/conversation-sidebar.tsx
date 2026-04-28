@@ -150,16 +150,14 @@ export const ConversationSidebar = ({
     }
 
     // Trigger Inngest function via API
-    try {
-      await ky.post("/api/messages", {
-        json: {
-          conversationId,
-          message: message.text,
-        },
+    const sendMessage = async () =>
+      ky.post("/api/messages", {
+        json: { conversationId, message: message.text },
       });
+
+    try {
+      await sendMessage();
     } catch (error) {
-      // §17 quota gate returns 429 with structured payload; surface the
-      // upgrade CTA instead of a generic "failed to send".
       if (
         error &&
         typeof error === "object" &&
@@ -167,6 +165,8 @@ export const ConversationSidebar = ({
         error.response instanceof Response
       ) {
         const status = error.response.status;
+
+        // §17 quota gate returns 429 with structured payload.
         if (status === 429) {
           try {
             const body = await error.response.json();
@@ -180,14 +180,29 @@ export const ConversationSidebar = ({
               setInput("");
               return;
             }
-          } catch {
-            /* fall through */
-          }
+          } catch { /* fall through */ }
         }
+
+        // 409 = a previous run crashed and left a message stuck in
+        // "processing". Auto-cancel the stale message and retry once so
+        // the user never has to manually clear it.
         if (status === 409) {
-          toast.error(
-            "Already processing a message — cancel it first or wait.",
-          );
+          try {
+            const body = await (error.response as Response).json();
+            const stuckId = body?.messageId;
+            if (stuckId) {
+              await ky.post("/api/messages/cancel", {
+                json: { messageId: stuckId },
+              });
+              // Retry the send now that the slot is free.
+              await sendMessage();
+              setInput("");
+              return;
+            }
+          } catch {
+            /* cancel or retry failed — fall through to generic error */
+          }
+          toast.error("Previous run is still in progress — please wait a moment and try again.");
           return;
         }
       }
@@ -200,17 +215,16 @@ export const ConversationSidebar = ({
   return (
     // Praxiom — agent panel sits on surface-1, header borderless (surface contrast only)
     <div className="flex flex-col h-full bg-surface-1">
-      <div className="h-10 flex items-center justify-between px-3 shrink-0">
+      {/* Praxiom-quality panel header */}
+      <div className="h-10 flex items-center justify-between px-3 shrink-0 border-b border-surface-3/60">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 shrink-0">
-            Agent
-          </span>
-          <span className="text-surface-4">·</span>
-          <div className="text-sm font-medium text-foreground truncate">
+          {/* Primary dot — signals the panel is the active intelligence surface */}
+          <span className="size-1.5 rounded-full bg-primary shrink-0" />
+          <span className="font-heading text-sm font-semibold tracking-[-0.02em] text-foreground truncate">
             {activeConversation?.title ?? DEFAULT_CONVERSATION_TITLE}
-          </div>
+          </span>
         </div>
-        <div className="flex items-center px-1 gap-1">
+        <div className="flex items-center gap-0.5">
           <Button
             size="icon-xs"
             variant="highlight"
@@ -229,6 +243,20 @@ export const ConversationSidebar = ({
       </div>
       <Conversation className="flex-1">
         <ConversationContent>
+          {/* Praxiom-quality empty state — shown before first message */}
+          {conversationMessages !== undefined && conversationMessages.length === 0 && (
+            <div className="flex flex-col items-center justify-center flex-1 py-10 gap-3 text-center px-4">
+              <span className="size-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                <span className="size-1.5 rounded-full bg-primary" />
+              </span>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Agent ready</p>
+                <p className="text-xs text-muted-foreground/70 leading-relaxed max-w-[18rem]">
+                  Describe what you want to build and the agent will plan, scaffold, and iterate with you.
+                </p>
+              </div>
+            </div>
+          )}
           {conversationMessages?.map((message, messageIndex) => {
             // Convert Convex toolCalls to component format
             const toolCalls: ToolCall[] = (message.toolCalls ?? []).map((tc) => ({
@@ -294,14 +322,13 @@ export const ConversationSidebar = ({
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
-      <div className="p-3">
+      <div className="p-3 border-t border-surface-3/60">
         <PromptInput
           onSubmit={handleSubmit}
-          className="mt-2"
         >
           <PromptInputBody>
             <PromptInputTextarea
-              placeholder="Ask Polaris anything..."
+              placeholder="What are you thinking about?"
               onChange={(e) => setInput(e.target.value)}
               value={input}
               disabled={isProcessing}

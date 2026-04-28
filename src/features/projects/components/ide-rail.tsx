@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * IdeRail — thin left navigation rail for the project IDE.
+ * IdeRail — labelled navigation sidebar for the project IDE.
  *
- * Praxiom §4.3 sidebar pattern, applied to a Cursor-style 3-pane IDE:
- * the rail toggles which auxiliary panels are visible, holds project-wide
- * actions, and houses the user identity. Active state uses the §4.3
- * left-edge accent bar (2px primary), not a filled background.
+ * Praxiom §4.3 sidebar pattern with text labels — elevated from the original
+ * icon-only 48px rail to a full 180px sidebar with section headers, labels,
+ * and a bottom identity cluster, matching the Praxiom design language.
  */
 
 import Link from "next/link";
@@ -22,64 +21,60 @@ import {
   SettingsIcon,
 } from "lucide-react";
 
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "@/features/workspaces/components/workspace-switcher";
 import { PlanBadge } from "@/features/billing/components/plan-badge";
 
-interface RailButtonProps {
+interface NavItemProps {
   icon: React.ElementType;
   label: string;
   active?: boolean;
   onClick?: () => void;
-  /** Praxiom — small dot in the bottom-right corner for "has activity". */
+  /** Small primary dot in the corner — signals background activity. */
   pulse?: boolean;
 }
 
-const RailButton = ({
+const NavItem = ({
   icon: Icon,
   label,
   active,
   onClick,
   pulse,
-}: RailButtonProps) => (
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <button
-        type="button"
-        onClick={onClick}
-        aria-label={label}
-        aria-pressed={active}
-        className={cn(
-          "relative w-full h-10 flex items-center justify-center transition-colors group",
-          "text-muted-foreground hover:text-foreground hover:bg-surface-2",
-          active && "text-foreground",
-        )}
-      >
-        {/* Praxiom §4.3 — left-edge active accent bar */}
-        <span
-          className={cn(
-            "absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r-full transition-colors",
-            active ? "bg-primary" : "bg-transparent",
-          )}
-        />
-        <Icon className="size-[18px]" />
-        {pulse && (
-          <span className="absolute top-2 right-2 size-1.5 rounded-full bg-primary animate-pulse" />
-        )}
-      </button>
-    </TooltipTrigger>
-    <TooltipContent side="right">{label}</TooltipContent>
-  </Tooltip>
+}: NavItemProps) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-label={label}
+    aria-pressed={active}
+    className={cn(
+      "relative w-full h-8 flex items-center gap-2.5 px-2.5 rounded-md transition-colors group",
+      "text-muted-foreground hover:text-foreground hover:bg-surface-2",
+      active && "text-foreground bg-surface-2",
+    )}
+  >
+    {/* Praxiom §4.3 — 2px left-edge primary accent bar */}
+    <span
+      className={cn(
+        "absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r-full transition-colors",
+        active ? "bg-primary" : "bg-transparent",
+      )}
+    />
+    <Icon className="size-3.5 shrink-0" />
+    <span className="text-xs font-medium tracking-[-0.01em] truncate">{label}</span>
+    {pulse && (
+      <span className="ml-auto size-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+    )}
+  </button>
+);
+
+const SectionLabel = ({ children }: { children: React.ReactNode }) => (
+  <p className="px-2.5 pt-3 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50 select-none">
+    {children}
+  </p>
 );
 
 interface IdeRailProps {
   filesOpen: boolean;
-  // D-026 — plan pane visibility
   planOpen: boolean;
   specOpen: boolean;
   agentOpen: boolean;
@@ -102,80 +97,91 @@ export const IdeRail = ({
   onOpenExport,
 }: IdeRailProps) => {
   const router = useRouter();
+
   return (
-  <aside className="w-12 shrink-0 bg-surface-1 flex flex-col items-stretch py-2 gap-0.5">
-    {/* Brand — links back to /dashboard */}
-    <Link
-      href="/dashboard"
-      className="h-10 flex items-center justify-center group"
-      aria-label="Polaris home"
-    >
-      <Image
-        src="/logo.svg"
-        alt="Polaris"
-        width={22}
-        height={22}
-        className="opacity-90 group-hover:opacity-100 transition-opacity"
-      />
-    </Link>
+    <aside className="w-44 shrink-0 bg-surface-1 flex flex-col py-2 overflow-hidden">
 
-    {/* Praxiom §7.8 — workspace switcher (D-020) */}
-    <WorkspaceSwitcher />
+      {/* Brand */}
+      <Link
+        href="/dashboard"
+        className="h-10 flex items-center gap-2.5 px-3 group mb-1"
+        aria-label="Polaris home"
+      >
+        <Image
+          src="/logo.svg"
+          alt="Polaris"
+          width={18}
+          height={18}
+          className="opacity-90 group-hover:opacity-100 transition-opacity shrink-0"
+        />
+        <span className="font-heading text-sm font-semibold tracking-[-0.02em] text-foreground group-hover:text-primary transition-colors">
+          Polaris
+        </span>
+      </Link>
 
-    <div className="h-px bg-surface-3 mx-2 my-1.5" />
+      {/* Workspace switcher — compact tile, left-aligned */}
+      <div className="px-1.5">
+        <WorkspaceSwitcher />
+      </div>
 
-    <RailButton
-      icon={FilesIcon}
-      label={filesOpen ? "Hide files" : "Show files"}
-      active={filesOpen}
-      onClick={onToggleFiles}
-    />
-    {/* D-026 — plan pane (build plan / sprint checklist) */}
-    <RailButton
-      icon={ListChecksIcon}
-      label={planOpen ? "Hide plan" : "Show plan"}
-      active={planOpen}
-      onClick={onTogglePlan}
-    />
-    <RailButton
-      icon={FileTextIcon}
-      label={specOpen ? "Hide spec" : "Show spec"}
-      active={specOpen}
-      onClick={onToggleSpec}
-    />
-    <RailButton
-      icon={MessageSquareIcon}
-      label={agentOpen ? "Hide agent" : "Show agent"}
-      active={agentOpen}
-      onClick={onToggleAgent}
-    />
-    <RailButton
-      icon={GithubIcon}
-      label="Export to GitHub"
-      onClick={onOpenExport}
-    />
+      <div className="h-px bg-surface-3 mx-2.5 my-2.5" />
 
-    {/* Spacer */}
-    <div className="flex-1" />
+      {/* Navigation */}
+      <div className="flex-1 flex flex-col px-1.5 min-h-0 overflow-y-auto scrollbar-thin">
+        <SectionLabel>Workspace</SectionLabel>
 
-    <RailButton
-      icon={SettingsIcon}
-      label="Settings"
-      onClick={() => router.push("/settings")}
-    />
+        <NavItem
+          icon={FilesIcon}
+          label="Explorer"
+          active={filesOpen}
+          onClick={onToggleFiles}
+        />
+        <NavItem
+          icon={ListChecksIcon}
+          label="Build Plan"
+          active={planOpen}
+          onClick={onTogglePlan}
+        />
+        <NavItem
+          icon={FileTextIcon}
+          label="Spec"
+          active={specOpen}
+          onClick={onToggleSpec}
+        />
 
-    <div className="h-10 flex items-center justify-center">
-      <UserButton
-        appearance={{
-          elements: { avatarBox: "size-7" },
-        }}
-      />
-    </div>
+        <SectionLabel>Tools</SectionLabel>
 
-    {/* D-019 — current plan tier; click navigates to billing settings. */}
-    <div className="flex items-center justify-center pb-1">
-      <PlanBadge />
-    </div>
-  </aside>
+        <NavItem
+          icon={MessageSquareIcon}
+          label="Agent"
+          active={agentOpen}
+          onClick={onToggleAgent}
+          pulse={agentOpen}
+        />
+        <NavItem
+          icon={GithubIcon}
+          label="Export"
+          onClick={onOpenExport}
+        />
+      </div>
+
+      {/* Bottom cluster — settings + identity + plan */}
+      <div className="px-1.5 pt-2 border-t border-surface-3 mt-1 space-y-0.5">
+        <NavItem
+          icon={SettingsIcon}
+          label="Settings"
+          onClick={() => router.push("/settings")}
+        />
+
+        <div className="flex items-center gap-2.5 px-2.5 h-8">
+          <UserButton
+            appearance={{
+              elements: { avatarBox: "size-5" },
+            }}
+          />
+          <PlanBadge />
+        </div>
+      </div>
+    </aside>
   );
 };

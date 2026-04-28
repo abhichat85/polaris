@@ -34,6 +34,31 @@ export const planRun = inngest.createFunction(
     id: "plan-run",
     name: "Polaris Planner",
     retries: 2,
+    /**
+     * onFailure fires after all retries are exhausted.
+     * Without this, a crashed planRun leaves the assistant message
+     * in `status: "processing"` forever → UI shows "Thinking…" indefinitely.
+     * Here we flip it to "completed" with a human-readable error so the
+     * user can retry rather than waiting forever.
+     */
+    onFailure: async ({ event, error, step }) => {
+      // FailureEventArgs: `event.data.event` is the original PlanRunEvent
+      // payload; `error` is the Error object that exhausted all retries.
+      const originalData = event.data.event.data as PlanRunEvent
+
+      const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
+      const internalKey = process.env.POLARIS_CONVEX_INTERNAL_KEY
+      if (!convexUrl || !internalKey || !originalData?.messageId) return
+
+      const convex = new ConvexHttpClient(convexUrl)
+      await step.run("surface-failure", async () => {
+        await convex.mutation(api.system.updateMessageContent, {
+          internalKey,
+          messageId: originalData.messageId as Id<"messages">,
+          content: `⚠️ Planning failed: ${error?.message ?? "Unknown error"}. Please try again or rephrase your prompt.`,
+        })
+      })
+    },
   },
   { event: "plan/run" },
   async ({ event, step }) => {
@@ -102,11 +127,8 @@ export const planRun = inngest.createFunction(
           internalKey,
           projectId: data.projectId as Id<"projects">,
           parentId: undefined,
-          name: "docs",
-          // We can't directly pass a folder hint; the createFileInternal
-          // pattern is "create one node at a time". For the first run we
-          // accept a single flat file 'plan.md' at root; the UI will show
-          // it. Future enhancement: walk path segments and create folders.
+          name: "plan.md",
+          content: canonicalMd,
         })
       }
     })

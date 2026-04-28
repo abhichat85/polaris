@@ -27,7 +27,7 @@ export interface CompactorOutput {
   outputTokens: number
 }
 
-const DEFAULT_MODEL = "claude-sonnet-4-6-20251015"
+const DEFAULT_MODEL = "claude-sonnet-4-5"
 const MAX_OUTPUT_TOKENS = 4_000
 
 /** Threshold at which the AgentRunner calls the Compactor. */
