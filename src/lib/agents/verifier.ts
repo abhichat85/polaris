@@ -8,7 +8,7 @@
  * Authority: D-036 — verification loop between agent turns.
  */
 
-export type VerifyStage = "tsc" | "eslint"
+export type VerifyStage = "tsc" | "eslint" | "build"
 
 export interface VerifyResult {
   ok: boolean
@@ -33,8 +33,10 @@ export interface VerifyDeps {
 
 const TSC_TIMEOUT_MS = 60_000
 const ESLINT_TIMEOUT_MS = 60_000
+const BUILD_TIMEOUT_MS = 5 * 60_000
 const TSC_MAX_LINES = 100
 const ESLINT_MAX_LINES = 200
+const BUILD_MAX_LINES = 80
 
 export async function verify(
   changedPaths: ReadonlySet<string>,
@@ -101,6 +103,29 @@ function filterTscOutput(
     if (matched.length >= maxLines) break
   }
   return matched.join("\n")
+}
+
+/**
+ * D-037 — Build verification on agent completion claim.
+ *
+ * Runs `npx next build` once, on the assumption that the agent has just
+ * stopped emitting tool calls AND has accumulated edits earlier in the
+ * run (totalChangedPaths > 0). On failure the runner injects the build
+ * output as a synthetic user message and continues, capped at 2
+ * attempts (separate from the tsc/eslint auto-fix budget).
+ *
+ * Returned `errors` contains stdout + stderr (last BUILD_MAX_LINES lines)
+ * which is what `next build` typically writes its diagnostics into.
+ */
+export async function verifyBuild(deps: VerifyDeps): Promise<VerifyResult> {
+  const result = await deps.exec(
+    "npx --no-install next build",
+    { cwd: deps.cwd, timeoutMs: BUILD_TIMEOUT_MS },
+  )
+  if (result.exitCode === 0) return { ok: true }
+  const merged = `${result.stdout}\n${result.stderr}`.trim()
+  const trimmed = trimLines(merged, BUILD_MAX_LINES)
+  return { ok: false, errors: trimmed, stage: "build" }
 }
 
 function trimLines(raw: string, maxLines: number): string {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { verify, type VerifyDeps } from "@/lib/agents/verifier"
+import { verify, verifyBuild, type VerifyDeps } from "@/lib/agents/verifier"
 
 type ExecFn = VerifyDeps["exec"]
 
@@ -187,6 +187,59 @@ describe("verifier", () => {
     const outLines = (result.errors ?? "").split("\n")
     // 200 lines + 1 truncation marker
     expect(outLines.length).toBeLessThanOrEqual(201)
+    expect(result.errors).toContain("truncated")
+  })
+})
+
+describe("verifyBuild (D-037)", () => {
+  it("returns ok=true on `next build` exit 0", async () => {
+    const exec = vi.fn<VerifyDeps["exec"]>(async () => ({
+      exitCode: 0,
+      stdout: "Compiled successfully",
+      stderr: "",
+    }))
+    const result = await verifyBuild({ exec })
+    expect(result.ok).toBe(true)
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining("next build"),
+      expect.any(Object),
+    )
+  })
+
+  it("returns ok=false with stage='build' and trimmed stdout+stderr on exit non-zero", async () => {
+    const exec = vi.fn<VerifyDeps["exec"]>(async () => ({
+      exitCode: 1,
+      stdout: "Failed to compile.\nsrc/app/page.tsx: TypeError",
+      stderr: "Build error occurred",
+    }))
+    const result = await verifyBuild({ exec })
+    expect(result.ok).toBe(false)
+    expect(result.stage).toBe("build")
+    expect(result.errors).toContain("Failed to compile")
+    expect(result.errors).toContain("Build error occurred")
+  })
+
+  it("forwards cwd from deps to exec", async () => {
+    const exec = vi.fn<VerifyDeps["exec"]>(async () => ({ exitCode: 0, stdout: "", stderr: "" }))
+    await verifyBuild({ exec, cwd: "/proj" })
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining("next build"),
+      expect.objectContaining({ cwd: "/proj" }),
+    )
+  })
+
+  it("truncates very long output to BUILD_MAX_LINES (~80)", async () => {
+    const longOutput = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n")
+    const exec = vi.fn<VerifyDeps["exec"]>(async () => ({
+      exitCode: 1,
+      stdout: longOutput,
+      stderr: "",
+    }))
+    const result = await verifyBuild({ exec })
+    expect(result.ok).toBe(false)
+    const lines = (result.errors ?? "").split("\n")
+    // 80 content lines + truncation marker line
+    expect(lines.length).toBeLessThanOrEqual(82)
     expect(result.errors).toContain("truncated")
   })
 })

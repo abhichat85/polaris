@@ -97,6 +97,13 @@ const DEFAULT_TURN_TIMEOUT_MS = 60_000
 const MAX_AUTO_FIX_ATTEMPTS = 3
 
 /**
+ * D-037 — Cap on build-verification attempts. `next build` is much more
+ * expensive than tsc/eslint, so we give the agent fewer chances to
+ * self-correct before surfacing.
+ */
+const MAX_BUILD_FIX_ATTEMPTS = 2
+
+/**
  * D-027 — Compactor handler. The runner calls this when the running token
  * total crosses the compaction threshold. Returns the handoff artifact;
  * the runner then resets `state.messages` to a single user message
@@ -141,6 +148,18 @@ export interface AgentRunnerDeps {
    * attempts. When absent, behaviour is identical to pre-D-036.
    */
   verify?: (changedPaths: ReadonlySet<string>) => Promise<VerifyResult>
+  /**
+   * D-037 — Optional build verifier. Fired ONCE per "completion claim"
+   * (model emits no tool calls AND state has accumulated edits earlier
+   * in the run). On build failure the runner injects the build output
+   * as a synthetic user message and loops, capped at 2 build-fix
+   * attempts (separate from the tsc/eslint cap). When absent, no build
+   * verification runs — same as pre-D-037 behaviour.
+   *
+   * Caller (agent-loop.ts) is expected to wire this only for paid
+   * tiers — `next build` is expensive on every run.
+   */
+  verifyBuild?: () => Promise<VerifyResult>
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -167,6 +186,14 @@ interface RunState {
    */
   pendingChangedPaths: Set<string>
   autoFixCount: number
+  /**
+   * D-037 — build-verification state. `totalChangedPaths` accumulates
+   * across the whole run (never cleared) so we know whether the agent
+   * has touched any code at all when it claims completion.
+   * `buildFixCount` is the number of `next build` attempts spent.
+   */
+  totalChangedPaths: Set<string>
+  buildFixCount: number
 }
 
 export class AgentRunner {
@@ -331,6 +358,9 @@ export class AgentRunner {
           // cleanly against whatever changes the resumed turn produces.
           pendingChangedPaths: new Set<string>(),
           autoFixCount: 0,
+          // D-037 — build-verification state likewise resets on resume.
+          totalChangedPaths: new Set<string>(),
+          buildFixCount: 0,
         }
       }
     }
@@ -342,6 +372,8 @@ export class AgentRunner {
       totalOutputTokens: 0,
       pendingChangedPaths: new Set<string>(),
       autoFixCount: 0,
+      totalChangedPaths: new Set<string>(),
+      buildFixCount: 0,
     }
   }
 
@@ -458,6 +490,9 @@ export class AgentRunner {
     const path = (tc.input as { path?: unknown }).path
     if (typeof path === "string" && path.length > 0) {
       state.pendingChangedPaths.add(path)
+      // D-037 — accumulate across the full run for build-verification
+      // gating. Never cleared; if any edit happened, build runs at done.
+      state.totalChangedPaths.add(path)
     }
   }
 
@@ -474,34 +509,63 @@ export class AgentRunner {
     input: AgentRunInput,
     state: RunState,
   ): Promise<"completed" | "continue" | "error"> {
-    if (!this.deps.verify) return "completed"
-    if (state.pendingChangedPaths.size === 0) return "completed"
+    // Stage A — path-level verifier (tsc + eslint).
+    if (this.deps.verify && state.pendingChangedPaths.size > 0) {
+      const result = await this.deps.verify(state.pendingChangedPaths)
+      if (!result.ok) {
+        // Hit the cap — surface to the user.
+        if (state.autoFixCount >= MAX_AUTO_FIX_ATTEMPTS) {
+          await this.markDone(
+            input,
+            state,
+            "error",
+            `Auto-verification (${result.stage}) failed after ${MAX_AUTO_FIX_ATTEMPTS} fix attempts. Latest errors:\n\n${result.errors}`,
+          )
+          return "error"
+        }
 
-    const result = await this.deps.verify(state.pendingChangedPaths)
-    if (result.ok) {
+        // Inject errors as a synthetic user message and continue.
+        state.messages.push({
+          role: "user",
+          content: `Auto-verification (${result.stage}) found errors in your last edit batch. Fix them before reporting completion:\n\n${result.errors}\n\n(This is auto-fix attempt ${state.autoFixCount + 1}/${MAX_AUTO_FIX_ATTEMPTS}.)`,
+        })
+        state.pendingChangedPaths.clear()
+        state.autoFixCount++
+        return "continue"
+      }
+      // Path-level clean — drop pending and fall through to build stage.
       state.pendingChangedPaths.clear()
-      return "completed"
     }
 
-    // Hit the cap — surface to the user.
-    if (state.autoFixCount >= MAX_AUTO_FIX_ATTEMPTS) {
-      await this.markDone(
-        input,
-        state,
-        "error",
-        `Auto-verification (${result.stage}) failed after ${MAX_AUTO_FIX_ATTEMPTS} fix attempts. Latest errors:\n\n${result.errors}`,
-      )
-      return "error"
+    // Stage B — build verification (D-037). Only fires when:
+    //   - verifyBuild dep is wired (caller decides per-tier policy)
+    //   - the agent has actually accumulated edits in this run
+    //   - we have build-fix budget remaining
+    if (
+      this.deps.verifyBuild &&
+      state.totalChangedPaths.size > 0
+    ) {
+      const buildResult = await this.deps.verifyBuild()
+      if (!buildResult.ok) {
+        if (state.buildFixCount >= MAX_BUILD_FIX_ATTEMPTS) {
+          await this.markDone(
+            input,
+            state,
+            "error",
+            `Build verification (next build) failed after ${MAX_BUILD_FIX_ATTEMPTS} attempts. Latest errors:\n\n${buildResult.errors}`,
+          )
+          return "error"
+        }
+        state.messages.push({
+          role: "user",
+          content: `Build verification (next build) failed before completion. Fix the build, then verify with \`run_command: npx next build\`.\n\nOutput:\n\n${buildResult.errors}\n\n(This is build-fix attempt ${state.buildFixCount + 1}/${MAX_BUILD_FIX_ATTEMPTS}.)`,
+        })
+        state.buildFixCount++
+        return "continue"
+      }
     }
 
-    // Inject errors as a synthetic user message and continue.
-    state.messages.push({
-      role: "user",
-      content: `Auto-verification (${result.stage}) found errors in your last edit batch. Fix them before reporting completion:\n\n${result.errors}\n\n(This is auto-fix attempt ${state.autoFixCount + 1}/${MAX_AUTO_FIX_ATTEMPTS}.)`,
-    })
-    state.pendingChangedPaths.clear()
-    state.autoFixCount++
-    return "continue"
+    return "completed"
   }
 
   // ── Termination helpers ─────────────────────────────────────────────────────

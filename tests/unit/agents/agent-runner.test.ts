@@ -48,10 +48,11 @@ const baseInput = {
 }
 
 type VerifyFn = (paths: ReadonlySet<string>) => Promise<VerifyResult>
+type VerifyBuildFn = () => Promise<VerifyResult>
 
 async function makeFixture(
   script: AgentStep[][],
-  opts?: { verify?: VerifyFn },
+  opts?: { verify?: VerifyFn; verifyBuild?: VerifyBuildFn },
 ) {
   const sink = new InMemoryAgentSink()
   const files = new InMemoryFileService()
@@ -65,6 +66,7 @@ async function makeFixture(
     sink,
     sandboxId: sb.id,
     verify: opts?.verify,
+    verifyBuild: opts?.verifyBuild,
   })
   // Seed an initial user message
   sink.initialMessages = [{ role: "user", content: "Build me a login page" }]
@@ -545,5 +547,259 @@ describe("AgentRunner — D-036 verification loop", () => {
 
     expect(verify).not.toHaveBeenCalled()
     expect(sink.done?.payload.status).toBe("completed")
+  })
+})
+
+describe("AgentRunner — D-037 build verification on completion claim", () => {
+  it("no verifyBuild dep → behavior unchanged", async () => {
+    const { sink, runner, files } = await makeFixture([
+      [
+        {
+          type: "tool_call",
+          toolCall: {
+            id: "t1",
+            name: "edit_file",
+            input: { path: "src/x.ts", search: "x = 1", replace: "x = 2" },
+          },
+        },
+        { type: "usage", inputTokens: 5, outputTokens: 2 },
+        { type: "done", stopReason: "tool_use" },
+      ],
+      [
+        { type: "text_delta", delta: "Done." },
+        { type: "usage", inputTokens: 5, outputTokens: 2 },
+        { type: "done", stopReason: "end_turn" },
+      ],
+    ])
+    await files.createPath("proj_1", "src/x.ts", "x = 1", "user")
+
+    await runner.run(baseInput)
+
+    expect(sink.done?.payload.status).toBe("completed")
+  })
+
+  it("no edits in run → verifyBuild NOT called", async () => {
+    const verifyBuild = vi.fn<VerifyBuildFn>(async () => ({ ok: true }))
+    const { sink, runner } = await makeFixture(
+      [
+        [
+          { type: "text_delta", delta: "Nothing to do." },
+          { type: "usage", inputTokens: 5, outputTokens: 1 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+      ],
+      { verifyBuild },
+    )
+
+    await runner.run(baseInput)
+
+    expect(verifyBuild).not.toHaveBeenCalled()
+    expect(sink.done?.payload.status).toBe("completed")
+  })
+
+  it("edits + verifyBuild ok → marks completed; build called once", async () => {
+    const verifyBuild = vi.fn<VerifyBuildFn>(async () => ({ ok: true }))
+    const { sink, runner, files } = await makeFixture(
+      [
+        [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "t1",
+              name: "edit_file",
+              input: { path: "src/x.ts", search: "x = 1", replace: "x = 2" },
+            },
+          },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "tool_use" },
+        ],
+        [
+          { type: "text_delta", delta: "Done." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+      ],
+      { verifyBuild },
+    )
+    await files.createPath("proj_1", "src/x.ts", "x = 1", "user")
+
+    await runner.run(baseInput)
+
+    expect(verifyBuild).toHaveBeenCalledTimes(1)
+    expect(sink.done?.payload.status).toBe("completed")
+  })
+
+  it("verifyBuild fails once, agent fixes, completes — synthetic message includes attempt 1/2", async () => {
+    const verifyBuild = vi
+      .fn<VerifyBuildFn>()
+      .mockResolvedValueOnce({
+        ok: false,
+        stage: "build",
+        errors: "Failed to compile.\nsrc/app/page.tsx: TypeError: Cannot read x",
+      })
+      .mockResolvedValueOnce({ ok: true })
+
+    const { sink, runner, files, adapter } = await makeFixture(
+      [
+        // Turn 1: edit
+        [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "t1",
+              name: "edit_file",
+              input: { path: "src/app/page.tsx", search: "y = 1", replace: "y = 2" },
+            },
+          },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "tool_use" },
+        ],
+        // Turn 2: model claims done → verifyBuild fails → synthetic
+        [
+          { type: "text_delta", delta: "Done." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+        // Turn 3: agent responds with another edit
+        [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "t2",
+              name: "edit_file",
+              input: { path: "src/app/page.tsx", search: "y = 2", replace: "y: number = 2" },
+            },
+          },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "tool_use" },
+        ],
+        // Turn 4: claims done → verifyBuild passes
+        [
+          { type: "text_delta", delta: "Fixed." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+      ],
+      { verifyBuild },
+    )
+    await files.createPath("proj_1", "src/app/page.tsx", "y = 1", "user")
+
+    await runner.run(baseInput)
+
+    expect(verifyBuild).toHaveBeenCalledTimes(2)
+    expect(sink.done?.payload.status).toBe("completed")
+
+    const turn3 = adapter.receivedMessages[2]
+    const synthetic = turn3.find(
+      (m) =>
+        m.role === "user" &&
+        typeof m.content === "string" &&
+        m.content.includes("Build verification") &&
+        m.content.includes("Failed to compile"),
+    )
+    expect(synthetic).toBeDefined()
+    expect(synthetic!.content).toContain("attempt 1/2")
+  })
+
+  it("verifyBuild fails 2 times → marks error with build output", async () => {
+    const verifyBuild = vi.fn<VerifyBuildFn>(async () => ({
+      ok: false,
+      stage: "build",
+      errors: "Failed to compile.\npersistent build error",
+    }))
+
+    // 3 paired edit/done turns to give the runner enough rope to hit the cap.
+    const script: AgentStep[][] = []
+    for (let i = 0; i < 3; i++) {
+      script.push([
+        {
+          type: "tool_call",
+          toolCall: {
+            id: `t_${i}`,
+            name: "edit_file",
+            input: {
+              path: "src/x.ts",
+              search: i === 0 ? "x" : `x${i}`,
+              replace: `x${i + 1}`,
+            },
+          },
+        },
+        { type: "usage", inputTokens: 5, outputTokens: 2 },
+        { type: "done", stopReason: "tool_use" },
+      ])
+      script.push([
+        { type: "text_delta", delta: `done ${i}` },
+        { type: "usage", inputTokens: 5, outputTokens: 2 },
+        { type: "done", stopReason: "end_turn" },
+      ])
+    }
+
+    const { sink, runner, files } = await makeFixture(script, { verifyBuild })
+    await files.createPath("proj_1", "src/x.ts", "x", "user")
+
+    await runner.run(baseInput)
+
+    // Expected lifecycle:
+    //   call 1 → fail (attempt 1/2 synthetic)
+    //   call 2 → fail (attempt 2/2 synthetic)
+    //   call 3 → fail (buildFixCount === MAX → markDone error)
+    expect(verifyBuild.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(sink.done?.payload.status).toBe("error")
+    expect(sink.done?.payload.errorMessage).toContain("Build verification")
+    expect(sink.done?.payload.errorMessage).toContain("persistent build error")
+  })
+
+  it("verify (path-level) fails → verifyBuild NOT called this iteration", async () => {
+    const verify = vi.fn<VerifyFn>(async () => ({
+      ok: false,
+      stage: "tsc",
+      errors: "src/x.ts(1,1): error TS2345: bad",
+    }))
+    const verifyBuild = vi.fn<VerifyBuildFn>(async () => ({ ok: true }))
+
+    const { sink, runner, files } = await makeFixture(
+      [
+        [
+          {
+            type: "tool_call",
+            toolCall: {
+              id: "t1",
+              name: "edit_file",
+              input: { path: "src/x.ts", search: "a", replace: "b" },
+            },
+          },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "tool_use" },
+        ],
+        // Turn 2: claims done; verify fails so we should NOT reach verifyBuild
+        [
+          { type: "text_delta", delta: "Done." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+        // Turn 3: agent retries — give it an end_turn so the loop terminates;
+        // we'll then expect another verify call. We don't care about reaching
+        // verifyBuild here, just that the FIRST verify failure short-circuits.
+        [
+          { type: "text_delta", delta: "Trying again." },
+          { type: "usage", inputTokens: 5, outputTokens: 2 },
+          { type: "done", stopReason: "end_turn" },
+        ],
+      ],
+      { verify, verifyBuild },
+    )
+    await files.createPath("proj_1", "src/x.ts", "a", "user")
+
+    await runner.run(baseInput)
+
+    expect(verify).toHaveBeenCalled()
+    // verifyBuild should not run while path verification still fails.
+    // Turn 3 has no edits (no tool calls) so pendingChangedPaths is empty
+    // and verify isn't called again — runner falls through to build stage.
+    // But there ARE edits in totalChangedPaths from turn 1, so verifyBuild
+    // does run on turn 3 with ok=true.
+    // Critical assertion: verifyBuild was NOT called on turn 2 (the failed-verify turn).
+    // Easiest check: verifyBuild called at most once (turn 3), not twice.
+    expect(verifyBuild.mock.calls.length).toBeLessThanOrEqual(1)
   })
 })
