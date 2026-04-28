@@ -138,7 +138,35 @@ export const agentLoop = inngest.createFunction(
 
     const sink = new ConvexAgentSink({ convex, internalKey })
     const files = new ConvexFileService({ convex })
-    const executor = new ToolExecutor({ files, sandbox })
+    const executor = new ToolExecutor({
+      files,
+      sandbox,
+      // D-045 — wire the read_runtime_errors tool to Convex.
+      runtimeErrors: {
+        list: async (args) => {
+          const rows = await convex.query(
+            api.runtimeErrors.listUnconsumedInternal,
+            { internalKey, projectId, since: args.since },
+          )
+          return rows.map((r) => ({
+            _id: r._id as string,
+            kind: r.kind,
+            message: r.message,
+            stack: r.stack,
+            url: r.url,
+            componentStack: r.componentStack,
+            timestamp: r.timestamp,
+            count: r.count,
+          }))
+        },
+        markConsumed: async (ids) => {
+          await convex.mutation(api.runtimeErrors.markConsumedInternal, {
+            internalKey,
+            ids: ids as Id<"runtimeErrors">[],
+          })
+        },
+      },
+    })
 
     // D-039/40/41 — classify the run, pick a model, size the budget. We
     // need: latest user prompt (the agent's marching orders), whether
