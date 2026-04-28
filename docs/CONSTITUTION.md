@@ -2647,6 +2647,42 @@ Six canonical UI patterns are stored as `.tsx` source strings in `src/lib/scaffo
 
 ---
 
+### D-043: Runtime Error Capture from Preview Iframe (locked 2026-04-29)
+
+Browser-side `polaris-runtime-tap.js` (served from `/public/`) hooks `window.onerror`, `unhandledrejection`, `console.error`, failed `fetch`, and a custom `polaris:react-error` event from React error boundaries; POSTs each event to `/api/runtime-error`. The Next.js proxy validates with Zod, holds the `POLARIS_CONVEX_INTERNAL_KEY`, and forwards to `runtimeErrors.ingest` which dedupes within a 1s window per `(kind, message, url)` and rate-limits at 50/min/project. Tap injection is scaffold-side and tier-gated to Pro/Team via `shouldInjectRuntimeTap(plan)`. Authority: `convex/runtimeErrors.ts`, `public/polaris-runtime-tap.js`, `src/app/api/runtime-error/route.ts`.
+
+---
+
+### D-044: Per-Project Live Context (locked 2026-04-29)
+
+`projects.activeRoute`, `projects.activeFiles[]` (cap 5), and `projects.recentEdits[]` (cap 10) record what the user is currently looking at and what the agent has touched recently. `setActiveRoute` + `pushActiveFile` are user-facing mutations called from the IDE preview/file tree. `recordRecentEditInternal` is internalKey-gated and called by ToolExecutor.deps.recordEdit after every successful mutating tool call. `getLiveContextInternal` returns the bundle for runner-side injection (D-047). Authority: `convex/projects.ts`.
+
+---
+
+### D-045: `read_runtime_errors` Tool (locked 2026-04-29)
+
+Tenth agent tool. Returns recent unconsumed runtime errors for the project as a formatted text block (kind, message, url, age, first stack frame, dedupe count). `markConsumed` defaults true so the model doesn't re-see the same errors. Tool count goes 9 → 10; failures fall back gracefully when `ToolExecutorDeps.runtimeErrors` is not wired (free tier or local-dev). Authority: `src/lib/tools/read-runtime-errors.ts`, executor deps `runtimeErrors`.
+
+---
+
+### D-046: Auto-Inject Runtime Errors at Turn Start (locked 2026-04-29)
+
+`AgentRunner.deps.loadRuntimeErrors` is called between iterations (after the steering check, before the model adapter). When fresh errors exist, the runner pushes a synthetic user message describing them so the model sees "the preview reported these errors since your last turn" without the user having to ask. Best-effort: any loader failure is swallowed (runtime-error capture must not fail the agent loop). agent-loop wires the loader against `runtimeErrors.listUnconsumedInternal` + `markConsumedInternal` and tracks `lastInjectAt` across iterations. Authority: `src/lib/agents/agent-runner.ts::run`.
+
+---
+
+### D-047: Live-Context Injection at Turn Start (locked 2026-04-29)
+
+`AgentRunner.deps.loadLiveContext` is called immediately after the runtime-error inject. Pushes a markdown block containing `Active route: …`, `Recently edited (newest first): …`, and `Currently open in editor: …` derived from `projects.getLiveContextInternal`. Helps a vague "this is broken" land without a round-trip — the model knows where the user is looking. Best-effort; empty fields → no injection. Authority: `src/features/conversations/inngest/agent-loop.ts` (loader), `src/lib/agents/agent-runner.ts::run`.
+
+---
+
+### D-048: Real-Eval v2 — Output-Quality Harness (locked 2026-04-29)
+
+`tests/eval/v2/` is the second eval layer. Where v1 (`tests/eval/quality-scenarios.test.ts`) measures *agent process* with a deterministic LLM stub, v2 boots the generated app via Playwright and asserts visual + behavioral correctness against 8 canonical scenarios (static page, auth flow, product list with cart, form validation, theme toggle, fix-runtime-bug, image-to-UI, fullstack todo). Visual-diff is gated by `pixelmatch` + `pngjs` (opt-in dev deps); first-run adopts the candidate as baseline; subsequent runs fail when delta exceeds 5%. CI: nightly cron + workflow_dispatch in `.github/workflows/eval-real.yml`; report.json + screenshots uploaded as artifacts. A change to the agent loop must keep v1 green AND not regress v2 pass rate. Authority: `tests/eval/v2/`, `scripts/eval-real.ts`, `docs/QUALITY-REPORT.md`.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
