@@ -208,6 +208,15 @@ export interface AgentRunnerDeps {
    * case when the preview is healthy).
    */
   loadRuntimeErrors?: () => Promise<string | undefined>
+  /**
+   * D-047 — Live context loader. Optional callback returning a
+   * formatted block describing what the user is currently looking at
+   * (active route + recently edited files). Injected as a synthetic
+   * user message at turn start; cheap because it's text-only.
+   *
+   * Returning empty/undefined → no injection.
+   */
+  loadLiveContext?: () => Promise<string | undefined>
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -344,6 +353,24 @@ export class AgentRunner {
           }
         } catch {
           /* swallow — runtime-error capture is non-critical */
+        }
+      }
+
+      // D-047 — inject live context (active route + recent edits + open
+      // files). Cheap text-only block; helps the model know "the user is
+      // staring at /products/[id]" so a vague "this is broken" lands
+      // without a round-trip. Best-effort.
+      if (this.deps.loadLiveContext) {
+        try {
+          const liveBlock = await this.deps.loadLiveContext()
+          if (liveBlock && liveBlock.length > 0) {
+            state.messages.push({
+              role: "user",
+              content: liveBlock,
+            })
+          }
+        } catch {
+          /* swallow */
         }
       }
 

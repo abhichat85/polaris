@@ -306,6 +306,38 @@ export const agentLoop = inngest.createFunction(
           .join("\n")
       }
 
+      // D-047 — live context loader. Reads activeRoute + recentEdits
+      // + activeFiles and renders a tight markdown block. Skipped when
+      // no fields are set (a fresh project with zero context).
+      const loadLiveContextDep = async () => {
+        try {
+          const ctxRow = await convex.query(
+            api.projects.getLiveContextInternal,
+            { internalKey, id: projectId },
+          )
+          if (!ctxRow) return undefined
+          const sections: string[] = []
+          if (ctxRow.activeRoute) {
+            sections.push(`Active route: \`${ctxRow.activeRoute}\``)
+          }
+          if (ctxRow.recentEdits.length > 0) {
+            const lines = ctxRow.recentEdits.slice(0, 5).map((e) => {
+              const ageSec = Math.max(0, Math.round((Date.now() - e.at) / 1000))
+              return `  - \`${e.path}\` (${ageSec}s ago)`
+            })
+            sections.push(`Recently edited (newest first):\n${lines.join("\n")}`)
+          }
+          if (ctxRow.activeFiles.length > 0) {
+            const lines = ctxRow.activeFiles.map((p) => `  - \`${p}\``)
+            sections.push(`Currently open in editor:\n${lines.join("\n")}`)
+          }
+          if (sections.length === 0) return undefined
+          return `## Live context\n\n${sections.join("\n\n")}`
+        } catch {
+          return undefined
+        }
+      }
+
       const runner = new AgentRunner({
         adapter,
         executor,
@@ -316,6 +348,7 @@ export const agentLoop = inngest.createFunction(
         verify: verifyDep, // D-036
         verifyBuild: verifyBuildDep, // D-037
         loadRuntimeErrors: loadRuntimeErrorsDep, // D-046
+        loadLiveContext: loadLiveContextDep, // D-047
       })
       try {
         await runner.run({
