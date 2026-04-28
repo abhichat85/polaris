@@ -76,6 +76,21 @@ export default defineSchema({
      * Will become required in a follow-up commit once backfill is verified.
      */
     workspaceId: v.optional(v.id("workspaces")),
+    /**
+     * D-038 — Per-project verification toggles. Controls whether the agent
+     * runner runs tsc/eslint between turns (D-036) and `next build` on
+     * completion claim (D-037). All fields are optional; absence means
+     * "use the tier default": Free tier defaults all to false, Pro/Team
+     * default tsc+eslint=true and build=true (set by agent-loop, not the
+     * runner). Set explicitly here to override the tier default.
+     */
+    verification: v.optional(
+      v.object({
+        typecheck: v.optional(v.boolean()),
+        lint: v.optional(v.boolean()),
+        build: v.optional(v.boolean()),
+      }),
+    ),
   })
     .index("by_owner", ["ownerId"])
     .index("by_workspace", ["workspaceId"]),

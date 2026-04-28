@@ -237,6 +237,57 @@ export const updateExportStatus = mutation({
     });
   },
 });
+// ── Verification settings (D-038) ───────────────────────────────────────────
+// Per-project overrides for the agent verification loop (D-036, D-037).
+// Settings are sparse: any field omitted falls through to the tier default
+// resolved by agent-loop.ts at run start (Free → all off, Pro/Team → all on).
+
+export const setVerificationSettings = mutation({
+  args: {
+    id: v.id("projects"),
+    typecheck: v.optional(v.boolean()),
+    lint: v.optional(v.boolean()),
+    build: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized access to this project")
+    }
+    // Build a sparse update — only include fields that were passed in so
+    // we never accidentally clobber an existing value with `undefined`.
+    const next: { typecheck?: boolean; lint?: boolean; build?: boolean } = {}
+    if (args.typecheck !== undefined) next.typecheck = args.typecheck
+    if (args.lint !== undefined) next.lint = args.lint
+    if (args.build !== undefined) next.build = args.build
+
+    await ctx.db.patch(args.id, {
+      verification: { ...(project.verification ?? {}), ...next },
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const getVerificationSettings = query({
+  args: { id: v.id("projects") },
+  returns: v.object({
+    typecheck: v.optional(v.boolean()),
+    lint: v.optional(v.boolean()),
+    build: v.optional(v.boolean()),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) {
+      throw new Error("Unauthorized access to this project")
+    }
+    return project.verification ?? {}
+  },
+})
+
 // ── Internal-key-gated mutations for Inngest GitHub workflows ───────────────
 // Authority: sub-plan 06 Task 11.
 

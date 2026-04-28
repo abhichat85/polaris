@@ -2603,6 +2603,18 @@ When the model stops emitting tool calls and there are pending changed paths, th
 
 ---
 
+### D-037: Build Verification on Completion Claim (locked 2026-04-28)
+
+After the path-level verifier (D-036) clears, if the agent has accumulated edits earlier in the run AND the optional `AgentRunnerDeps.verifyBuild` dep is wired, the runner invokes it (typically `npx next build`). On failure the runner pushes a synthetic user message with the build output (truncated to ~80 lines) and continues — capped at 2 build-fix attempts (separate from the tsc/eslint cap). On the 3rd failed attempt the runner marks `error`. `verifyBuild` is intentionally tier-gated by the caller (agent-loop.ts) — `next build` is expensive enough that we don't run it on free tier by default. Authority: `src/lib/agents/verifier.ts::verifyBuild`, agent-runner `MAX_BUILD_FIX_ATTEMPTS`.
+
+---
+
+### D-038: Per-Project Verification Settings (locked 2026-04-28)
+
+`projects.verification` is an optional sparse object `{ typecheck?, lint?, build? }` that overrides the tier defaults for D-036/D-037 stages. Tier defaults: free → all off, pro/team → all on. Per-field overrides are merged on top of the tier default by `resolveVerificationPolicy(plan, overrides)` in `src/lib/agents/verification-policy.ts`, and the agent-loop only wires the `verify` / `verifyBuild` deps that the resolved policy enables. Lets paid-tier users disable expensive `next build` per project (e.g. for a doc site) and lets free-tier users opt INTO tsc/eslint at their own quota cost. Authority: `convex/projects.ts::setVerificationSettings`, `src/lib/agents/verification-policy.ts`.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
