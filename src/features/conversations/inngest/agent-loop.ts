@@ -23,10 +23,14 @@
 import { ConvexHttpClient } from "convex/browser"
 import { NonRetriableError } from "inngest"
 import { inngest } from "@/inngest/client"
-import { AgentRunner, runBudget } from "@/lib/agents/agent-runner"
+import {
+  AgentRunner,
+  runBudget,
+  runBudgetForTask,
+} from "@/lib/agents/agent-runner"
 import { ConvexAgentSink } from "@/lib/agents/convex-sink"
 import { ConvexFileService } from "@/lib/files/convex-file-service"
-import { getAdapter } from "@/lib/agents/registry"
+import { ClaudeAdapter } from "@/lib/agents/claude-adapter"
 import {
   getSandboxProvider,
   SandboxDeadError,
@@ -39,6 +43,8 @@ import {
   shouldWireVerify,
   shouldWireVerifyBuild,
 } from "@/lib/agents/verification-policy"
+import { classifyTask } from "@/lib/agents/task-classifier"
+import { resolveTaskModel, applyTierGate } from "@/lib/agents/task-models"
 import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
 
@@ -83,7 +89,6 @@ export const agentLoop = inngest.createFunction(
       userId: data.userId,
     })
     const plan = (customer?.plan ?? "free") as "free" | "pro" | "team"
-    const budget = runBudget(plan)
 
     // Constitution §17 — pre-loop quota check. NonRetriableError so Inngest
     // doesn't burn retries on a quota wall.
@@ -134,7 +139,58 @@ export const agentLoop = inngest.createFunction(
     const sink = new ConvexAgentSink({ convex, internalKey })
     const files = new ConvexFileService({ convex })
     const executor = new ToolExecutor({ files, sandbox })
-    const adapter = getAdapter("claude")
+
+    // D-039/40/41 — classify the run, pick a model, size the budget. We
+    // need: latest user prompt (the agent's marching orders), whether
+    // this is the first turn, and how big the active plan is.
+    const { taskClass, modelId } = await (async () => {
+      try {
+        const messages = await convex.query(api.system.getConversationMessages, {
+          internalKey,
+          conversationId: data.conversationId as Id<"conversations">,
+        })
+        const userMessages = messages.filter((m) => m.role === "user")
+        const latest = userMessages.at(-1)
+        const userPrompt = typeof latest?.content === "string" ? latest.content : ""
+        const isFirstTurn = userMessages.length <= 1
+
+        let planSize = 0
+        try {
+          const currentSpec = await convex.query(api.specs.getByProject, {
+            projectId: projectId,
+          })
+          planSize = currentSpec?.features?.length ?? 0
+        } catch {
+          /* no plan / older convex schema — treat as planSize=0 */
+        }
+
+        const taskClass = classifyTask({
+          userPrompt,
+          planSize,
+          recentFileCount: 0, // populated once E.1 ships
+          isFirstTurn,
+        })
+        const baseModel = resolveTaskModel({ role: "executor", taskClass })
+        const modelId = applyTierGate(plan, baseModel, "executor")
+        return { taskClass, modelId }
+      } catch {
+        // Defensive fallback — Sonnet, standard task class.
+        return {
+          taskClass: "standard" as const,
+          modelId: applyTierGate(
+            plan,
+            resolveTaskModel({ role: "executor", taskClass: "standard" }),
+            "executor",
+          ),
+        }
+      }
+    })()
+
+    const budget = runBudgetForTask(plan, taskClass)
+    const adapter = new ClaudeAdapter({
+      apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+      model: modelId,
+    })
 
     // D-038 — resolve per-project verification policy. Project may have a
     // sparse override of the tier defaults (free off, pro/team on).
