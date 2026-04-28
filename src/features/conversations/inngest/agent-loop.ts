@@ -141,6 +141,16 @@ export const agentLoop = inngest.createFunction(
     const executor = new ToolExecutor({
       files,
       sandbox,
+      // D-044 — push every successful mutating edit into projects.recentEdits
+      // so the runner's live-context block (D-047) reflects what the agent
+      // just touched.
+      recordEdit: async (path: string) => {
+        await convex.mutation(api.projects.recordRecentEditInternal, {
+          internalKey,
+          id: projectId,
+          path,
+        })
+      },
       // D-045 — wire the read_runtime_errors tool to Convex.
       runtimeErrors: {
         list: async (args) => {

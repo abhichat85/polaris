@@ -37,6 +37,14 @@ export interface ToolExecutorDeps {
    * call sites + tests don't need to change.
    */
   runtimeErrors?: ReadRuntimeErrorsDeps
+  /**
+   * D-044 — Optional recent-edit recorder. When provided, the executor
+   * fires it after every successful mutating tool call so the runner's
+   * live-context block (D-047) can show the most-recently-edited
+   * paths. Best-effort: any failure is swallowed (missing live context
+   * must never fail an agent run).
+   */
+  recordEdit?: (path: string) => Promise<void>
 }
 
 const COMMAND_TIMEOUT_MS = 60_000
@@ -63,42 +71,66 @@ export class ToolExecutor {
         }
       }
 
-      switch (toolCall.name) {
-        case "read_file":
-          return await this.readFile(toolCall.input as ReadInput, ctx)
-        case "write_file":
-          return await this.writeFile(toolCall.input as WriteInput, ctx)
-        case "edit_file":
-          return await this.editFile(toolCall.input as EditInput, ctx)
-        case "multi_edit":
-          return await this.multiEdit(toolCall.input as MultiEditInput, ctx)
-        case "create_file":
-          return await this.createFile(toolCall.input as WriteInput, ctx)
-        case "delete_file":
-          return await this.deleteFile(toolCall.input as { path: string }, ctx)
-        case "list_files":
-          return await this.listFiles(toolCall.input as { directory: string }, ctx)
-        case "run_command":
-          return await this.runCommand(toolCall.input as RunInput, ctx)
-        case "search_code":
-          return await this.searchCode(toolCall.input as unknown as SearchCodeArgs, ctx)
-        case "read_runtime_errors":
-          return await this.readRuntimeErrors(
-            toolCall.input as unknown as ReadRuntimeErrorsArgs,
-          )
-        default:
-          return {
-            ok: false,
-            error: `Unknown tool: ${toolCall.name}`,
-            errorCode: "INTERNAL_ERROR",
-          }
+      const result = await this.dispatch(toolCall, ctx)
+
+      // D-044 — record successful mutating edits for live context. Best-effort
+      // (any failure is swallowed; missing live context must not fail the run).
+      if (
+        result.ok &&
+        MUTATING_TOOLS.has(toolCall.name) &&
+        this.deps.recordEdit
+      ) {
+        const path = (toolCall.input as { path?: unknown }).path
+        if (typeof path === "string" && path.length > 0) {
+          this.deps.recordEdit(path).catch(() => {
+            /* swallow */
+          })
+        }
       }
+
+      return result
     } catch (err) {
       return {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
         errorCode: classifyError(err),
       }
+    }
+  }
+
+  private async dispatch(
+    toolCall: ToolCall,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolOutput> {
+    switch (toolCall.name) {
+      case "read_file":
+        return await this.readFile(toolCall.input as ReadInput, ctx)
+      case "write_file":
+        return await this.writeFile(toolCall.input as WriteInput, ctx)
+      case "edit_file":
+        return await this.editFile(toolCall.input as EditInput, ctx)
+      case "multi_edit":
+        return await this.multiEdit(toolCall.input as MultiEditInput, ctx)
+      case "create_file":
+        return await this.createFile(toolCall.input as WriteInput, ctx)
+      case "delete_file":
+        return await this.deleteFile(toolCall.input as { path: string }, ctx)
+      case "list_files":
+        return await this.listFiles(toolCall.input as { directory: string }, ctx)
+      case "run_command":
+        return await this.runCommand(toolCall.input as RunInput, ctx)
+      case "search_code":
+        return await this.searchCode(toolCall.input as unknown as SearchCodeArgs, ctx)
+      case "read_runtime_errors":
+        return await this.readRuntimeErrors(
+          toolCall.input as unknown as ReadRuntimeErrorsArgs,
+        )
+      default:
+        return {
+          ok: false,
+          error: `Unknown tool: ${toolCall.name}`,
+          errorCode: "INTERNAL_ERROR",
+        }
     }
   }
 
