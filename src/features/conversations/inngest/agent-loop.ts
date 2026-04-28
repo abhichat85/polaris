@@ -33,6 +33,12 @@ import {
 } from "@/lib/sandbox"
 import { ToolExecutor } from "@/lib/tools/executor"
 import { withSpan } from "@/lib/observability/spans"
+import { verify, verifyBuild } from "@/lib/agents/verifier"
+import {
+  resolveVerificationPolicy,
+  shouldWireVerify,
+  shouldWireVerifyBuild,
+} from "@/lib/agents/verification-policy"
 import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
 
@@ -130,6 +136,36 @@ export const agentLoop = inngest.createFunction(
     const executor = new ToolExecutor({ files, sandbox })
     const adapter = getAdapter("claude")
 
+    // D-038 — resolve per-project verification policy. Project may have a
+    // sparse override of the tier defaults (free off, pro/team on).
+    // Best-effort: any error keeps verification disabled.
+    const verificationFlags = await (async () => {
+      try {
+        const project = await convex.query(api.projects.getById, {
+          id: projectId,
+        })
+        return resolveVerificationPolicy(plan, project?.verification)
+      } catch {
+        return resolveVerificationPolicy(plan, undefined)
+      }
+    })()
+
+    // D-036/D-037 — wire verifier deps when policy enables them. Both
+    // pass deps.exec bound to this sandbox so the verifier doesn't need
+    // its own sandbox handle.
+    const verifyDep = shouldWireVerify(verificationFlags)
+      ? (paths: ReadonlySet<string>) =>
+          verify(paths, {
+            exec: (cmd, opts) => sandbox.exec(sandboxId, cmd, opts ?? {}),
+          })
+      : undefined
+    const verifyBuildDep = shouldWireVerifyBuild(verificationFlags)
+      ? () =>
+          verifyBuild({
+            exec: (cmd, opts) => sandbox.exec(sandboxId, cmd, opts ?? {}),
+          })
+      : undefined
+
     // D-030 — augment system prompt with the project's AGENTS.md if present.
     // Best-effort: any error keeps the canonical prompt.
     const systemPromptOverride = await (async () => {
@@ -157,6 +193,8 @@ export const agentLoop = inngest.createFunction(
         sandboxId,
         budget, // D-025
         systemPrompt: systemPromptOverride, // D-030
+        verify: verifyDep, // D-036
+        verifyBuild: verifyBuildDep, // D-037
       })
       try {
         await runner.run({
