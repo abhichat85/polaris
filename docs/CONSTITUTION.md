@@ -2641,6 +2641,12 @@ Layered on top of the tier-aware budget (D-025): trivial gets 0.2x iterations/to
 
 ---
 
+### D-042: Worked-Pattern Library (locked 2026-04-28)
+
+Six canonical UI patterns are stored as `.tsx` source strings in `src/lib/scaffold/patterns/` and copied as files into every new project at `/.polaris/patterns/<name>.tsx`. The patterns cover the surfaces every Polaris-built app needs: auth form, data table, dashboard KPI cards, settings page, empty state, and data-fetching page. Each pattern's header documents when to use it, which Praxiom design tokens it uses, and common variants. The starter AGENTS.md includes a fragment (`PATTERNS_AGENTS_MD_FRAGMENT`) telling the agent to read the matching pattern before generating its own structure for solved problems. Adding/modifying patterns requires a Constitutional amendment because they shape the feel of every Polaris-built app. Authority: `src/lib/scaffold/patterns/index.ts`.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?
