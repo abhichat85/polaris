@@ -18,6 +18,11 @@ import type { ToolCall } from "@/lib/agents/types"
 import { FORBIDDEN_COMMAND_PATTERNS } from "./definitions"
 import { FilePermissionPolicy } from "./file-permission-policy"
 import { searchCode, type SearchCodeArgs, type SearchCodeResult } from "./search-code"
+import {
+  readRuntimeErrors,
+  type ReadRuntimeErrorsArgs,
+  type ReadRuntimeErrorsDeps,
+} from "./read-runtime-errors"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -25,6 +30,13 @@ import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
 export interface ToolExecutorDeps {
   files: FileService
   sandbox: SandboxProvider
+  /**
+   * D-045 — Optional runtime-errors deps. When provided, the
+   * `read_runtime_errors` tool returns real Convex data; when absent,
+   * the tool returns a friendly "not configured" message so older
+   * call sites + tests don't need to change.
+   */
+  runtimeErrors?: ReadRuntimeErrorsDeps
 }
 
 const COMMAND_TIMEOUT_MS = 60_000
@@ -70,6 +82,10 @@ export class ToolExecutor {
           return await this.runCommand(toolCall.input as RunInput, ctx)
         case "search_code":
           return await this.searchCode(toolCall.input as unknown as SearchCodeArgs, ctx)
+        case "read_runtime_errors":
+          return await this.readRuntimeErrors(
+            toolCall.input as unknown as ReadRuntimeErrorsArgs,
+          )
         default:
           return {
             ok: false,
@@ -339,6 +355,39 @@ export class ToolExecutor {
       return {
         ok: true,
         data: { formatted: formatMatches(result) },
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+  }
+
+  private async readRuntimeErrors(
+    input: ReadRuntimeErrorsArgs,
+  ): Promise<ToolOutput> {
+    if (!this.deps.runtimeErrors) {
+      return {
+        ok: true,
+        data: {
+          formatted:
+            "Runtime error capture is not configured for this project (Free tier). Upgrade to Pro/Team to enable preview-app error capture.",
+          count: 0,
+          consumed: [],
+        },
+      }
+    }
+    try {
+      const result = await readRuntimeErrors(input ?? {}, this.deps.runtimeErrors)
+      return {
+        ok: true,
+        data: {
+          formatted: result.formatted,
+          count: result.count,
+          consumed: result.consumed,
+        },
       }
     } catch (err) {
       return {

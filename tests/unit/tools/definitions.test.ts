@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest"
 import { AGENT_TOOLS, FORBIDDEN_COMMAND_PATTERNS, getToolDefinition } from "@/lib/tools/definitions"
 
 describe("AGENT_TOOLS", () => {
-  it("exposes exactly nine tools (CONSTITUTION §8, D-017, D-034, D-035)", () => {
-    expect(AGENT_TOOLS).toHaveLength(9)
+  it("exposes exactly ten tools (CONSTITUTION §8, D-017, D-034, D-035, D-045)", () => {
+    expect(AGENT_TOOLS).toHaveLength(10)
   })
 
-  it("contains the nine Constitutional tools by name", () => {
+  it("contains the ten Constitutional tools by name", () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort()
     expect(names).toEqual(
       [
@@ -16,6 +16,7 @@ describe("AGENT_TOOLS", () => {
         "list_files",
         "multi_edit",
         "read_file",
+        "read_runtime_errors",
         "run_command",
         "search_code",
         "write_file",
@@ -34,6 +35,8 @@ describe("AGENT_TOOLS", () => {
     for (const t of AGENT_TOOLS) {
       expect(t.inputSchema.type).toBe("object")
       expect(Array.isArray(t.inputSchema.required)).toBe(true)
+      // read_runtime_errors has no required fields — both args optional.
+      if (t.name === "read_runtime_errors") continue
       expect(t.inputSchema.required.length, `tool ${t.name}`).toBeGreaterThan(0)
     }
   })

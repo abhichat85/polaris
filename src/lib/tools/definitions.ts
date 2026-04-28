@@ -1,5 +1,6 @@
 /**
- * The nine agent tools. Authority: CONSTITUTION.md Article VIII (D-017, D-034, D-035 amended).
+ * The ten agent tools. Authority: CONSTITUTION.md Article VIII
+ * (D-017, D-034, D-035, D-045 amended).
  *
  * Adding a new tool requires a Constitutional amendment (Article XXI) — do not
  * extend this list casually. Removing a tool also requires an amendment.
@@ -161,6 +162,27 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         },
       },
       required: ["command"],
+    },
+  },
+  {
+    name: "read_runtime_errors",
+    description:
+      "Read recent uncaught errors from the running preview app. Returns errors captured by window.onerror, unhandled promise rejections, console.error calls, failed fetches, and React error boundaries. Empty array means no runtime errors right now (which is what you want). Use this to diagnose 'this button doesn't work' style reports — the preview reports the actual error you can fix.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: {
+          type: "integer",
+          description:
+            "Optional unix-ms; only return errors at or after this time. Default: last 60s.",
+        },
+        markConsumed: {
+          type: "boolean",
+          description:
+            "Mark these errors as seen so subsequent calls don't re-return them. Default true.",
+        },
+      },
+      required: [],
     },
   },
 ]
