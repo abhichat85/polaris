@@ -196,6 +196,18 @@ export interface AgentRunnerDeps {
    * tiers — `next build` is expensive on every run.
    */
   verifyBuild?: () => Promise<VerifyResult>
+  /**
+   * D-046 — Auto-inject runtime errors at turn start. Optional
+   * callback that returns recent unconsumed runtime errors. When
+   * present and returns a non-empty string, the runner pushes the
+   * formatted text as a synthetic user message before the next
+   * adapter call so the model sees "the preview reported these
+   * errors since your last turn" without the user having to ask.
+   *
+   * Returning empty string / undefined → no injection (the typical
+   * case when the preview is healthy).
+   */
+  loadRuntimeErrors?: () => Promise<string | undefined>
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -313,6 +325,25 @@ export class AgentRunner {
         const steer = await this.deps.sink.pullPendingSteer(input.messageId)
         if (steer) {
           state.messages.push({ role: "user", content: steer })
+        }
+      }
+
+      // D-046 — auto-inject runtime errors. Best-effort: any failure in
+      // the loader is swallowed (the agent shouldn't fail because the
+      // ingest service is down). When the preview reports new errors
+      // since the last turn, push them as a synthetic user message so
+      // the model sees them without the user having to ask.
+      if (this.deps.loadRuntimeErrors) {
+        try {
+          const errorBlock = await this.deps.loadRuntimeErrors()
+          if (errorBlock && errorBlock.length > 0) {
+            state.messages.push({
+              role: "user",
+              content: `Runtime errors captured by the preview app since your last turn:\n\n${errorBlock}\n\nIf these look caused by your recent edits, fix them. If they look pre-existing, mention them in your response so the user knows.`,
+            })
+          }
+        } catch {
+          /* swallow — runtime-error capture is non-critical */
         }
       }
 

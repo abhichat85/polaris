@@ -270,6 +270,32 @@ export const agentLoop = inngest.createFunction(
     // Single-retry loop on SandboxDeadError. After one reprovision, escalate.
     let attempts = 0
     while (true) {
+      // D-046 — auto-inject runtime errors at turn start. Tracks the
+      // last-seen timestamp across iterations so we don't re-inject
+      // the same errors. First call returns errors from the last 60s.
+      let lastInjectAt = Date.now() - 60_000
+      const loadRuntimeErrorsDep = async () => {
+        const rows = await convex.query(
+          api.runtimeErrors.listUnconsumedInternal,
+          { internalKey, projectId, since: lastInjectAt },
+        )
+        if (rows.length === 0) return undefined
+        const ids = rows.map((r) => r._id)
+        await convex.mutation(api.runtimeErrors.markConsumedInternal, {
+          internalKey,
+          ids: ids as Id<"runtimeErrors">[],
+        })
+        lastInjectAt = Date.now()
+        return rows
+          .map((r) => {
+            const ageSec = Math.max(0, Math.round((Date.now() - r.timestamp) / 1000))
+            const dupeNote = r.count && r.count > 1 ? ` ×${r.count}` : ""
+            const urlNote = r.url ? `  (${r.url})` : ""
+            return `[${r.kind}${dupeNote}] ${r.message}${urlNote}  — ${ageSec}s ago`
+          })
+          .join("\n")
+      }
+
       const runner = new AgentRunner({
         adapter,
         executor,
@@ -279,6 +305,7 @@ export const agentLoop = inngest.createFunction(
         systemPrompt: systemPromptOverride, // D-030
         verify: verifyDep, // D-036
         verifyBuild: verifyBuildDep, // D-037
+        loadRuntimeErrors: loadRuntimeErrorsDep, // D-046
       })
       try {
         await runner.run({
