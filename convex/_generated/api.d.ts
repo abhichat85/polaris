@@ -24,6 +24,7 @@ import type * as migrations_create_personal_workspaces from "../migrations/creat
 import type * as migrations_verify_workspace_backfill from "../migrations/verify_workspace_backfill.js";
 import type * as plans from "../plans.js";
 import type * as projects from "../projects.js";
+import type * as runtimeErrors from "../runtimeErrors.js";
 import type * as sandboxes from "../sandboxes.js";
 import type * as specs from "../specs.js";
 import type * as steering from "../steering.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/verify_workspace_backfill": typeof migrations_verify_workspace_backfill;
   plans: typeof plans;
   projects: typeof projects;
+  runtimeErrors: typeof runtimeErrors;
   sandboxes: typeof sandboxes;
   specs: typeof specs;
   steering: typeof steering;
