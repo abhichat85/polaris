@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest"
-import { runBudget } from "@/lib/agents/agent-runner"
+import { runBudget, runBudgetForTask } from "@/lib/agents/agent-runner"
 
 describe("runBudget — D-025 tier-aware run budgets", () => {
   it("free tier = 5min / 50 iter / 150K tokens", () => {
@@ -38,5 +38,47 @@ describe("runBudget — D-025 tier-aware run budgets", () => {
     expect(team.maxTokens).toBeGreaterThan(pro.maxTokens)
     expect(pro.maxIterations).toBeGreaterThan(free.maxIterations)
     expect(team.maxIterations).toBeGreaterThan(pro.maxIterations)
+  })
+})
+
+describe("runBudgetForTask — D-041 task-class multipliers", () => {
+  it("trivial scales budget down (~0.2-0.3x)", () => {
+    const base = runBudget("pro")
+    const trivial = runBudgetForTask("pro", "trivial")
+    expect(trivial.maxIterations).toBeLessThan(base.maxIterations)
+    expect(trivial.maxTokens).toBeLessThan(base.maxTokens)
+    expect(trivial.maxDurationMs).toBeLessThan(base.maxDurationMs)
+    // 100 * 0.2 = 20 iter
+    expect(trivial.maxIterations).toBe(20)
+  })
+
+  it("standard equals base budget", () => {
+    const base = runBudget("pro")
+    const standard = runBudgetForTask("pro", "standard")
+    expect(standard).toEqual(base)
+  })
+
+  it("hard scales budget up (~1.6x)", () => {
+    const base = runBudget("pro")
+    const hard = runBudgetForTask("pro", "hard")
+    expect(hard.maxIterations).toBeGreaterThan(base.maxIterations)
+    expect(hard.maxTokens).toBeGreaterThan(base.maxTokens)
+    expect(hard.maxDurationMs).toBeGreaterThan(base.maxDurationMs)
+    // 100 * 1.6 = 160 iter
+    expect(hard.maxIterations).toBe(160)
+  })
+
+  it("respects floor: maxIterations >= 1, maxTokens >= 1000, maxDurationMs >= 60s", () => {
+    // Even on free tier with trivial multiplier, no field collapses to zero.
+    const trivial = runBudgetForTask("free", "trivial")
+    expect(trivial.maxIterations).toBeGreaterThanOrEqual(1)
+    expect(trivial.maxTokens).toBeGreaterThanOrEqual(1_000)
+    expect(trivial.maxDurationMs).toBeGreaterThanOrEqual(60_000)
+  })
+
+  it("hard on team tier scales appropriately (200 * 1.6 = 320 iter)", () => {
+    const hard = runBudgetForTask("team", "hard")
+    expect(hard.maxIterations).toBe(320)
+    expect(hard.maxTokens).toBe(960_000) // 600K * 1.6
   })
 })

@@ -2615,6 +2615,32 @@ After the path-level verifier (D-036) clears, if the agent has accumulated edits
 
 ---
 
+### D-039: Task Classifier (locked 2026-04-28)
+
+Each agent run is classified at start time as `trivial`, `standard`, or `hard` by a deterministic regex/keyword classifier (`src/lib/agents/task-classifier.ts`). Hard signals (any one wins): first turn of conversation, plan size > 5 features, prompt contains refactor/rewrite/investigate/debug/architecture/design/migrate/redesign, or > 5 recent file edits. Trivial requires both signals: prompt < 80 chars AND starts with rename/fix typo/change/update/remove/delete/add. Standard is the fall-through. Drives D-040 (model routing) and D-041 (budget multipliers). The cheap heuristic ships in v1; future iteration can replace with a tiny Haiku-classified pass at turn start.
+
+---
+
+### D-040: Multi-Model Routing (locked 2026-04-28)
+
+Within the Anthropic provider, picks the right Claude tier per role + task class:
+
+- planner, evaluator → Opus 4.7
+- compactor → Haiku 4.5
+- executor + trivial → Haiku 4.5
+- executor + standard → Sonnet 4.6 (current default)
+- executor + hard → Opus 4.7
+
+Free tier is gated to Sonnet for executor/planner/evaluator (Haiku still allowed for compactor, the cheap path). Pro/Team get full routing. Per-project model overrides win over the table when set. Authority: `src/lib/agents/task-models.ts::resolveTaskModel` + `applyTierGate`.
+
+---
+
+### D-041: Task-Classified Budget Multipliers (locked 2026-04-28)
+
+Layered on top of the tier-aware budget (D-025): trivial gets 0.2x iterations/tokens and 0.3x duration; standard is 1.0x (unchanged); hard is 1.6x across all axes. Floored: maxIterations >= 1, maxTokens >= 1000, maxDurationMs >= 60s so no axis can collapse to zero on the trivial × free combination. Effect: a typo fix on Pro tier no longer gets the same 30-min / 100-iter budget as a multi-feature build; a hard refactor on Pro stretches to ~48 min / 160 iter. Authority: `src/lib/agents/agent-runner.ts::runBudgetForTask`.
+
+---
+
 ### D-022: `assertWithinQuotaInternal` Pattern for Server-Side Quota Checks (locked 2026-04-27)
 
 **Question:** How do server-side callers (Next.js API routes, Inngest functions) check quota when they don't have a Clerk auth context to pipe through Convex?

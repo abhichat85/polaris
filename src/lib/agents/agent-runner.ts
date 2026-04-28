@@ -81,6 +81,42 @@ export function runBudget(plan: Plan): RunBudget {
   return FREE_BUDGET
 }
 
+/**
+ * D-041 — Task-classified budget multipliers. A trivial typo gets a
+ * fraction of the standard budget; a hard multi-file refactor gets
+ * extra room. Layered on top of the tier-aware budget (D-025).
+ *
+ * Multipliers chosen so a "trivial" task can't burn 30 minutes on free
+ * tier and a "hard" task on Pro can stretch to ~48 minutes (vs 30 base).
+ */
+export type TaskClass = "trivial" | "standard" | "hard"
+
+interface ClassMultipliers {
+  iter: number
+  tok: number
+  dur: number
+}
+
+const CLASS_MULTIPLIERS: Record<TaskClass, ClassMultipliers> = {
+  trivial: { iter: 0.2, tok: 0.2, dur: 0.3 },
+  standard: { iter: 1.0, tok: 1.0, dur: 1.0 },
+  hard: { iter: 1.6, tok: 1.6, dur: 1.6 },
+}
+
+/**
+ * Combine the tier base (D-025) with the task-class multiplier (D-041).
+ * Returns whole-number budget values rounded to the nearest integer.
+ */
+export function runBudgetForTask(plan: Plan, taskClass: TaskClass): RunBudget {
+  const base = runBudget(plan)
+  const mult = CLASS_MULTIPLIERS[taskClass]
+  return {
+    maxIterations: Math.max(1, Math.round(base.maxIterations * mult.iter)),
+    maxTokens: Math.max(1_000, Math.round(base.maxTokens * mult.tok)),
+    maxDurationMs: Math.max(60_000, Math.round(base.maxDurationMs * mult.dur)),
+  }
+}
+
 // Back-compat exports — existing callers/tests reference these directly.
 export const MAX_ITERATIONS = FREE_BUDGET.maxIterations
 export const MAX_TOKENS = FREE_BUDGET.maxTokens
