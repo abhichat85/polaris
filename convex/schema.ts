@@ -91,9 +91,66 @@ export default defineSchema({
         build: v.optional(v.boolean()),
       }),
     ),
+    /**
+     * D-044 — Live context: route the user is currently looking at in
+     * the IDE preview. Set by the preview panel on path change.
+     * Injected into the agent's per-turn context (E.2) so it knows
+     * what the user is staring at when they say "this is broken".
+     */
+    activeRoute: v.optional(v.string()),
+    /**
+     * D-044 — Files the user has open in the editor (most recent
+     * first, capped at 5). Hint at scope.
+     */
+    activeFiles: v.optional(v.array(v.string())),
+    /**
+     * D-044 — Files the agent has edited recently (most recent first,
+     * capped at 10). Distinct from activeFiles which is user-driven.
+     */
+    recentEdits: v.optional(
+      v.array(v.object({ path: v.string(), at: v.number() })),
+    ),
   })
     .index("by_owner", ["ownerId"])
     .index("by_workspace", ["workspaceId"]),
+
+  /**
+   * D-043 — Runtime errors captured from the running preview app.
+   * Browser-side script (`public/polaris-runtime-tap.js`) hooks
+   * window.onerror, unhandledrejection, console.error, failed fetch,
+   * and React error boundaries; POSTs each event to the Polaris HTTP
+   * proxy which forwards to the `runtimeErrors.ingest` mutation.
+   *
+   * The agent reads these via the `read_runtime_errors` tool and the
+   * runner auto-injects unconsumed errors at the start of each turn.
+   */
+  runtimeErrors: defineTable({
+    projectId: v.id("projects"),
+    sandboxId: v.optional(v.string()),
+    kind: v.union(
+      v.literal("error"),
+      v.literal("unhandled_rejection"),
+      v.literal("console_error"),
+      v.literal("network_error"),
+      v.literal("react_error_boundary"),
+    ),
+    message: v.string(),
+    stack: v.optional(v.string()),
+    url: v.optional(v.string()),
+    componentStack: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    timestamp: v.number(),
+    /** True once the agent has seen this error (via read_runtime_errors
+     * or the auto-inject path). Stays in the table for ~24h for UI
+     * visibility, then GC'd by a cron. */
+    consumed: v.boolean(),
+    /** Dedupe count — when the same (kind, message, url) hits within
+     * 1s, increment instead of creating a new row. */
+    count: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_unconsumed", ["projectId", "consumed"])
+    .index("by_project_kind_message", ["projectId", "kind", "message"]),
 
   files: defineTable({
     projectId: v.id("projects"),
