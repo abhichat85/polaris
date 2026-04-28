@@ -288,6 +288,82 @@ export const getVerificationSettings = query({
   },
 })
 
+// ── Live context (D-044) ─────────────────────────────────────────────────────
+// IDE writes activeRoute on path change; tool executor pushes recentEdits
+// after each successful agent edit. The runner reads these fields at turn
+// start to inject "what the user is currently looking at" (D-047).
+
+const MAX_ACTIVE_FILES = 5
+const MAX_RECENT_EDITS = 10
+
+export const setActiveRoute = mutation({
+  args: { id: v.id("projects"), route: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) throw new Error("Unauthorized")
+    await ctx.db.patch(args.id, {
+      activeRoute: args.route,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const pushActiveFile = mutation({
+  args: { id: v.id("projects"), path: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await verifyAuth(ctx)
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.ownerId !== identity.subject) throw new Error("Unauthorized")
+    const existing = (project.activeFiles ?? []).filter((p) => p !== args.path)
+    const next = [args.path, ...existing].slice(0, MAX_ACTIVE_FILES)
+    await ctx.db.patch(args.id, {
+      activeFiles: next,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const recordRecentEditInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    id: v.id("projects"),
+    path: v.string(),
+    at: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const expected = process.env.POLARIS_CONVEX_INTERNAL_KEY
+    if (!expected || args.internalKey !== expected) {
+      throw new Error("invalid_internal_key")
+    }
+    const project = await ctx.db.get(args.id)
+    if (!project) return
+    const at = args.at ?? Date.now()
+    const existing = (project.recentEdits ?? []).filter((e) => e.path !== args.path)
+    const next = [{ path: args.path, at }, ...existing].slice(0, MAX_RECENT_EDITS)
+    await ctx.db.patch(args.id, { recentEdits: next })
+  },
+})
+
+export const getLiveContextInternal = query({
+  args: { internalKey: v.string(), id: v.id("projects") },
+  handler: async (ctx, args) => {
+    const expected = process.env.POLARIS_CONVEX_INTERNAL_KEY
+    if (!expected || args.internalKey !== expected) {
+      throw new Error("invalid_internal_key")
+    }
+    const project = await ctx.db.get(args.id)
+    if (!project) return null
+    return {
+      activeRoute: project.activeRoute ?? null,
+      activeFiles: project.activeFiles ?? [],
+      recentEdits: project.recentEdits ?? [],
+    }
+  },
+})
+
 // ── Internal-key-gated mutations for Inngest GitHub workflows ───────────────
 // Authority: sub-plan 06 Task 11.
 
