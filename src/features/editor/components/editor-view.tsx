@@ -294,7 +294,7 @@ function EditorEmptyState({
             detail="WebContainer sandbox is ready"
           />
           <Step
-            done={bootPhase === "starting" || bootPhase === "running"}
+            done={bootPhase === "starting"}
             label="Dependencies installed"
             detail={
               bootPhase === "installing"

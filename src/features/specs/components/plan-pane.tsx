@@ -29,6 +29,16 @@ import type { Id } from "../../../../convex/_generated/dataModel"
 
 type Status = "todo" | "in_progress" | "done" | "blocked"
 
+/** Shared shape for items rendered in the plan pane (tasks or legacy features). */
+interface PlanItem {
+  id: string
+  title: string
+  status: Status
+  priority: "p0" | "p1" | "p2"
+  sprint?: number
+  description?: string
+}
+
 const STATUS_META: Record<Status, { icon: typeof CheckCircleIcon; tone: string }> = {
   todo: { icon: CircleIcon, tone: "text-muted-foreground/60" },
   in_progress: { icon: Loader2Icon, tone: "text-info animate-spin-slow" },
@@ -57,11 +67,21 @@ export const PlanPane = ({ projectId }: Props) => {
   const isLegacy = !buildPlan && !!legacyPlan
 
   // Unified items — buildPlans uses "tasks", legacy uses "features".
-  const items = plan ? ("tasks" in plan ? plan.tasks : plan.features) : null
+  // Both share id, title, status, priority, sprint — that's all we render.
+  const items: PlanItem[] | null = plan
+    ? ("tasks" in plan ? plan.tasks : plan.features).map((f) => ({
+        id: f.id,
+        title: f.title,
+        status: f.status as Status,
+        priority: f.priority as "p0" | "p1" | "p2",
+        sprint: f.sprint,
+        description: "description" in f ? (f.description as string | undefined) : undefined,
+      }))
+    : null
 
   const grouped = useMemo(() => {
     if (!items) return null
-    const bySprint = new Map<number, typeof items>()
+    const bySprint = new Map<number, PlanItem[]>()
     for (const f of items) {
       const k = f.sprint ?? 0
       if (!bySprint.has(k)) bySprint.set(k, [])
