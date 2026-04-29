@@ -99,6 +99,7 @@ export const create = mutation({
       name: args.name,
       ownerId: identity.subject,
       workspaceId,
+      lifecycleState: "empty",
       updatedAt: Date.now(),
     });
 
