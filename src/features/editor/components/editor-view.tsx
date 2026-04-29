@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { MonitorIcon, TerminalIcon } from "lucide-react";
+import { FilesIcon, MonitorIcon, TerminalIcon } from "lucide-react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 
@@ -227,18 +227,37 @@ function EditorEmptyState({
   bootError: string | null;
   onRetry: () => void;
 }) {
+  // Once the server is running, show only a minimal "open a file" prompt.
+  // The full boot step ladder is noise at this point.
+  if (bootPhase === "running") {
+    return (
+      <div className="size-full flex flex-col items-center justify-center gap-4 px-8">
+        <div className="size-10 rounded-xl bg-surface-2/60 flex items-center justify-center">
+          <FilesIcon className="size-4 text-muted-foreground/40" />
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium text-muted-foreground/70">
+            Open a file to start editing
+          </p>
+          <p className="text-xs text-muted-foreground/40 leading-relaxed">
+            Click any file in the Explorer sidebar
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const phaseLabel =
     bootPhase === "installing"
       ? "Installing dependencies…"
       : bootPhase === "starting"
       ? "Starting dev server…"
-      : bootPhase === "running"
-      ? "Dev server running"
       : bootPhase === "failed"
       ? "Boot failed"
       : wcLoading
       ? "Starting environment…"
       : "Environment ready";
+
   return (
     <div className="size-full flex flex-col items-center justify-center gap-6 px-8">
       {/* Brand mark */}
@@ -257,9 +276,7 @@ function EditorEmptyState({
           <span
             className={cn(
               "size-1.5 rounded-full shrink-0",
-              bootPhase === "running"
-                ? "bg-success"
-                : bootPhase === "failed"
+              bootPhase === "failed"
                 ? "bg-destructive"
                 : bootPhase === "installing" || bootPhase === "starting" || wcLoading
                 ? "bg-warning/70 animate-pulse"
@@ -269,7 +286,7 @@ function EditorEmptyState({
           <span className="text-xs text-muted-foreground">{phaseLabel}</span>
         </div>
 
-        {/* Steps — driven by phases, not user input */}
+        {/* Steps — shown only while still booting */}
         <div className="flex flex-col gap-1.5">
           <Step
             done={!wcLoading}
@@ -288,29 +305,13 @@ function EditorEmptyState({
             }
           />
           <Step
-            done={bootPhase === "running"}
-            label="Dev server running"
-            detail={
-              serverUrl ? (
-                <a
-                  href={serverUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary underline underline-offset-2 hover:opacity-80"
-                >
-                  {serverUrl}
-                </a>
-              ) : bootPhase === "starting" ? (
-                "Waiting for first request…"
-              ) : (
-                "Will start automatically after install"
-              )
-            }
-          />
-          <Step
             done={false}
-            label="Open a file"
-            detail="Click any file in the Explorer to edit"
+            label="Starting dev server"
+            detail={
+              bootPhase === "starting"
+                ? "Waiting for first request…"
+                : "Will start automatically after install"
+            }
           />
         </div>
 
