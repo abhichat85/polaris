@@ -383,11 +383,24 @@ export const agentLoop = inngest.createFunction(
         // cleanly, ask Convex if any sprint is fully done + un-evaluated.
         // Tier-gate: only paid plans get the Evaluator (cost protection).
         if (plan === "pro" || plan === "team") {
-          const sprintReady = await convex.query(
-            api.specs.findSprintReadyForEval,
+          // Check buildPlans first (new), fall back to legacy specs.
+          let sprintReady = await convex.query(
+            api.buildPlans.findSprintReadyForEval,
             { internalKey, projectId },
           )
+          if (sprintReady === null) {
+            sprintReady = await convex.query(
+              api.specs.findSprintReadyForEval,
+              { internalKey, projectId },
+            )
+          }
           if (sprintReady !== null) {
+            // Mark evaluated in both tables for safety.
+            await convex.mutation(api.buildPlans.markSprintEvaluated, {
+              internalKey,
+              projectId,
+              sprint: sprintReady,
+            }).catch(() => {}) // buildPlan may not exist yet for legacy projects
             await convex.mutation(api.specs.markSprintEvaluated, {
               internalKey,
               projectId,

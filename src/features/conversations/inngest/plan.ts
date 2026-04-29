@@ -92,16 +92,32 @@ export const planRun = inngest.createFunction(
       })
     })
 
-    // Step 2 — persist the plan structurally + as markdown.
+    // Step 2 — persist the plan to the buildPlans table (Technical Spec).
+    // Also writes to legacy specs.writePlan for back-compat during migration.
     await step.run("persist-plan", async () => {
       // Re-serialise the parsed Plan so the markdown matches the canonical
       // format exactly (model output may have minor formatting drift).
       const canonicalMd = serializePlan(result.plan)
+      const flatFeatures = result.plan.sprints.flatMap((s) => s.features)
+
+      // Write to buildPlans (new canonical location).
+      await convex.mutation(api.buildPlans.writePlan, {
+        internalKey,
+        projectId: data.projectId as Id<"projects">,
+        title: result.plan.title,
+        tasks: flatFeatures.map((f) => ({
+          ...f,
+          specFeatureId: f.id, // Self-link during migration; proper mapping TBD
+        })),
+        planMarkdown: canonicalMd,
+      })
+
+      // Also write to legacy specs.writePlan for back-compat.
       await convex.mutation(api.specs.writePlan, {
         internalKey,
         projectId: data.projectId as Id<"projects">,
         title: result.plan.title,
-        features: result.plan.sprints.flatMap((s) => s.features),
+        features: flatFeatures,
         planMarkdown: canonicalMd,
       })
     })
