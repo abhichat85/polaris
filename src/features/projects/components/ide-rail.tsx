@@ -162,11 +162,12 @@ export const IdeRail = ({
       <div className={cn("flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-thin", collapsed ? "px-0.5" : "px-1.5")}>
         <SectionLabel collapsed={collapsed}>Workspace</SectionLabel>
 
+        {/* Spec first — it's the source of truth */}
         <NavItem
-          icon={FilesIcon}
-          label="Explorer"
-          active={filesOpen}
-          onClick={onToggleFiles}
+          icon={FileTextIcon}
+          label="Product Spec"
+          active={specOpen}
+          onClick={onToggleSpec}
           collapsed={collapsed}
         />
         <NavItem
@@ -177,10 +178,10 @@ export const IdeRail = ({
           collapsed={collapsed}
         />
         <NavItem
-          icon={FileTextIcon}
-          label="Spec"
-          active={specOpen}
-          onClick={onToggleSpec}
+          icon={FilesIcon}
+          label="Explorer"
+          active={filesOpen}
+          onClick={onToggleFiles}
           collapsed={collapsed}
         />
 
