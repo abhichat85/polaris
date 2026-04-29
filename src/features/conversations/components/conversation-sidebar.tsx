@@ -254,7 +254,8 @@ export const ConversationSidebar = ({
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">Agent ready</p>
                 <p className="text-xs text-muted-foreground/70 leading-relaxed max-w-[18rem]">
-                  Describe what you want to build and the agent will plan, scaffold, and iterate with you.
+                  Describe what you want to build. The agent will help you
+                  define your Product Spec, generate a Build Plan, and start coding.
                 </p>
               </div>
             </div>
