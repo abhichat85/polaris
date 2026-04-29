@@ -64,21 +64,41 @@ export const upsertSpec = mutation({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .first()
 
-    const data: Record<string, unknown> = {
-      projectId: args.projectId,
-      features: args.features,
-      updatedAt: Date.now(),
-      updatedBy: args.updatedBy,
-      praxiomDocumentId: args.praxiomDocumentId,
-    }
-    // Only set source/specStatus if provided (don't overwrite with undefined)
-    if (args.source) data.source = args.source
-    if (args.specStatus) data.specStatus = args.specStatus
-
     if (existing) {
-      await ctx.db.patch(existing._id, data)
+      const patch: Record<string, unknown> = {
+        projectId: args.projectId,
+        features: args.features,
+        updatedAt: Date.now(),
+        updatedBy: args.updatedBy,
+        praxiomDocumentId: args.praxiomDocumentId,
+      }
+      if (args.source) patch.source = args.source
+      if (args.specStatus) patch.specStatus = args.specStatus
+      await ctx.db.patch(existing._id, patch)
     } else {
-      await ctx.db.insert("specs", data as any)
+      // For inserts, build the full document with all required fields.
+      await ctx.db.insert("specs", {
+        projectId: args.projectId,
+        features: args.features,
+        updatedAt: Date.now(),
+        updatedBy: args.updatedBy,
+        praxiomDocumentId: args.praxiomDocumentId,
+        ...(args.source ? { source: args.source } : {}),
+        ...(args.specStatus ? { specStatus: args.specStatus } : {}),
+      })
+    }
+
+    // Auto-transition lifecycle: if the project is "empty" and we're now
+    // writing a spec, move to "spec_drafting". This ensures the lifecycle
+    // state machine has no dead states.
+    if (args.features.length > 0) {
+      const project = await ctx.db.get(args.projectId)
+      if (project && (project.lifecycleState === "empty" || !project.lifecycleState)) {
+        await ctx.db.patch(args.projectId, {
+          lifecycleState: "spec_drafting",
+          updatedAt: Date.now(),
+        })
+      }
     }
   },
 })
