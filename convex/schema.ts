@@ -92,6 +92,21 @@ export default defineSchema({
       }),
     ),
     /**
+     * Project lifecycle state — drives which UI the user sees.
+     * Transitions: empty → spec_drafting → spec_complete → planning → building → iterating.
+     * Optional for back-compat with existing projects (treated as "building" when absent).
+     */
+    lifecycleState: v.optional(
+      v.union(
+        v.literal("empty"),
+        v.literal("spec_drafting"),
+        v.literal("spec_complete"),
+        v.literal("planning"),
+        v.literal("building"),
+        v.literal("iterating"),
+      ),
+    ),
+    /**
      * D-044 — Live context: route the user is currently looking at in
      * the IDE preview. Set by the preview panel on path change.
      * Injected into the agent's per-turn context (E.2) so it knows
@@ -367,8 +382,31 @@ export default defineSchema({
     /**
      * D-026 — plan title surfaced in the IDE plan pane.
      * Optional for back-compat with rows written before plan mode landed.
+     * NOTE: This field is being phased out from specs — plan titles now
+     * belong to the buildPlans table. Kept optional for migration period.
      */
     title: v.optional(v.string()),
+    /**
+     * How this spec was created. Drives source badge in UI + sync logic.
+     * Optional for back-compat with pre-existing specs.
+     */
+    source: v.optional(
+      v.union(
+        v.literal("user"),
+        v.literal("praxiom"),
+        v.literal("agent"),
+        v.literal("upload"),
+        v.literal("github"),
+      ),
+    ),
+    /**
+     * Whether the spec is still being defined or has been confirmed.
+     * Drives project lifecycle transitions (STATE 1 vs STATE 2).
+     * Optional for back-compat (treated as "complete" when absent).
+     */
+    specStatus: v.optional(
+      v.union(v.literal("drafting"), v.literal("complete")),
+    ),
     features: v.array(
       v.object({
         /** ULID — sortable timestamp prefix, see CONSTITUTION §11.2. */
@@ -405,6 +443,47 @@ export default defineSchema({
       v.literal("praxiom"),
     ),
     praxiomDocumentId: v.optional(v.string()),
+  }).index("by_project", ["projectId"]),
+
+  // ── Build Plans (Technical Spec) ────────────────────────────────────────
+  /**
+   * The agent-owned Technical Spec — "how" to build the Product Spec.
+   * One active plan per project. Tasks are implementation-level items
+   * derived from spec features, grouped into sprints.
+   *
+   * Separated from specs to enforce clear ownership: Product Spec is
+   * human/Praxiom-owned; Build Plan is Polaris-agent-owned.
+   */
+  buildPlans: defineTable({
+    projectId: v.id("projects"),
+    /** Agent-generated plan title (was specs.title). */
+    title: v.optional(v.string()),
+    /** Full markdown form of the plan (was specs.planMarkdown). */
+    planMarkdown: v.optional(v.string()),
+    tasks: v.array(
+      v.object({
+        id: v.string(),
+        /** Links this task back to the Product Spec feature it implements. */
+        specFeatureId: v.optional(v.string()),
+        title: v.string(),
+        description: v.optional(v.string()),
+        /** Files the agent plans to create/modify. */
+        fileTargets: v.optional(v.array(v.string())),
+        status: v.union(
+          v.literal("todo"),
+          v.literal("in_progress"),
+          v.literal("done"),
+          v.literal("blocked"),
+        ),
+        priority: v.union(v.literal("p0"), v.literal("p1"), v.literal("p2")),
+        sprint: v.optional(v.number()),
+        praxiomEvidenceIds: v.optional(v.array(v.string())),
+      }),
+    ),
+    /** Sprint indices already evaluated. Prevents double-eval. */
+    evaluatedSprints: v.optional(v.array(v.number())),
+    generatedAt: v.number(),
+    generatedBy: v.literal("agent"),
   }).index("by_project", ["projectId"]),
 
   // ── Sub-plan 06 (GitHub integration) ─────────────────────────────────────
