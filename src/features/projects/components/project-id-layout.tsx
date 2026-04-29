@@ -18,14 +18,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Allotment } from "allotment";
+import { useMutation } from "convex/react";
 
 import { ConversationSidebar } from "@/features/conversations/components/conversation-sidebar";
 import { SpecPanel } from "@/features/specs/components/spec-panel";
+import { SpecComposer } from "@/features/specs/components/spec-composer";
 import { PlanPane } from "@/features/specs/components/plan-pane";
 import { FileExplorer } from "./file-explorer";
 import { IdeRail } from "./ide-rail";
 import { ProjectTopbar } from "./project-topbar";
 import { GitHubDialog } from "./github-dialog";
+import { useProject } from "../hooks/use-projects";
+import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 
 const LEFT_DEFAULT = 300;
@@ -52,9 +56,25 @@ export const ProjectIdLayout = ({
   children: React.ReactNode;
   projectId: Id<"projects">;
 }) => {
-  const [leftMode, setLeftMode] = useState<LeftPaneMode>("plan");
+  const project = useProject(projectId);
+  const transitionLifecycle = useMutation(api.projects.transitionLifecycle);
+
+  // Derive lifecycle state — treat absent/undefined as "building" for legacy projects.
+  const lifecycleState = project?.lifecycleState ?? "building";
+  const isSpecPhase = lifecycleState === "empty" || lifecycleState === "spec_drafting";
+
+  const [leftMode, setLeftMode] = useState<LeftPaneMode>(() =>
+    isSpecPhase ? "hidden" : "plan",
+  );
   const [agentOpen, setAgentOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
+
+  // When lifecycle transitions from spec phase to building, switch left pane to plan.
+  useEffect(() => {
+    if (!isSpecPhase && leftMode === "hidden") {
+      setLeftMode("plan");
+    }
+  }, [isSpecPhase, leftMode]);
 
   // Persist sidebar collapsed state across refreshes.
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -128,7 +148,19 @@ export const ProjectIdLayout = ({
               )}
             </Allotment.Pane>
 
-            <Allotment.Pane minSize={300}>{children}</Allotment.Pane>
+            <Allotment.Pane minSize={300}>
+              {isSpecPhase ? (
+                <SpecComposer
+                  projectId={projectId}
+                  onConfirmSpec={async () => {
+                    await transitionLifecycle({ projectId, state: "spec_complete" });
+                    setLeftMode("plan");
+                  }}
+                />
+              ) : (
+                children
+              )}
+            </Allotment.Pane>
 
             <Allotment.Pane
               snap
