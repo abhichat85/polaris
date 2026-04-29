@@ -12,6 +12,7 @@ import type * as account from "../account.js";
 import type * as agent_checkpoints from "../agent_checkpoints.js";
 import type * as agent_messages from "../agent_messages.js";
 import type * as auth from "../auth.js";
+import type * as buildPlans from "../buildPlans.js";
 import type * as clerk_users from "../clerk_users.js";
 import type * as constants from "../constants.js";
 import type * as conversations from "../conversations.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   agent_checkpoints: typeof agent_checkpoints;
   agent_messages: typeof agent_messages;
   auth: typeof auth;
+  buildPlans: typeof buildPlans;
   clerk_users: typeof clerk_users;
   constants: typeof constants;
   conversations: typeof conversations;

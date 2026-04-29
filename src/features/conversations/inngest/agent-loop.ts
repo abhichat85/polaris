@@ -105,6 +105,15 @@ export const agentLoop = inngest.createFunction(
     }
     const convex = new ConvexHttpClient(convexUrl)
 
+    // Ensure lifecycle is at least "building" — if the project was in an
+    // earlier state (empty, spec_drafting, spec_complete, planning), the
+    // agent starting to run means we're now building.
+    await convex.mutation(api.projects.transitionLifecycle, {
+      internalKey,
+      projectId: data.projectId as Id<"projects">,
+      state: "building",
+    }).catch(() => {}) // Non-critical — don't block the agent loop.
+
     // D-025 — resolve the user's plan once, use it for budget AND quota.
     const customer = await convex.query(api.customers.getByUser, {
       userId: data.userId,
@@ -383,11 +392,24 @@ export const agentLoop = inngest.createFunction(
         // cleanly, ask Convex if any sprint is fully done + un-evaluated.
         // Tier-gate: only paid plans get the Evaluator (cost protection).
         if (plan === "pro" || plan === "team") {
-          const sprintReady = await convex.query(
-            api.specs.findSprintReadyForEval,
+          // Check buildPlans first (new), fall back to legacy specs.
+          let sprintReady = await convex.query(
+            api.buildPlans.findSprintReadyForEval,
             { internalKey, projectId },
           )
+          if (sprintReady === null) {
+            sprintReady = await convex.query(
+              api.specs.findSprintReadyForEval,
+              { internalKey, projectId },
+            )
+          }
           if (sprintReady !== null) {
+            // Mark evaluated in both tables for safety.
+            await convex.mutation(api.buildPlans.markSprintEvaluated, {
+              internalKey,
+              projectId,
+              sprint: sprintReady,
+            }).catch(() => {}) // buildPlan may not exist yet for legacy projects
             await convex.mutation(api.specs.markSprintEvaluated, {
               internalKey,
               projectId,

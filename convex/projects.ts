@@ -99,6 +99,7 @@ export const create = mutation({
       name: args.name,
       ownerId: identity.subject,
       workspaceId,
+      lifecycleState: "empty",
       updatedAt: Date.now(),
     });
 
@@ -408,5 +409,80 @@ export const setExportStatusInternal = mutation({
     };
     if (args.exportRepoUrl) patch.exportRepoUrl = args.exportRepoUrl;
     await ctx.db.patch(args.id, patch);
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lifecycle state transitions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Transition the project lifecycle state. Callable by any authenticated
+ * user or internal agent key. Validates that the transition is valid.
+ *
+ * Valid transitions:
+ *   empty → spec_drafting
+ *   spec_drafting → spec_complete
+ *   spec_complete → planning
+ *   planning → building
+ *   building → iterating
+ *   iterating → spec_drafting (re-spec loop)
+ *   iterating → planning (re-plan loop)
+ *   * → building (legacy projects entering the pipeline)
+ */
+export const transitionLifecycle = mutation({
+  args: {
+    projectId: v.id("projects"),
+    state: v.union(
+      v.literal("empty"),
+      v.literal("spec_drafting"),
+      v.literal("spec_complete"),
+      v.literal("planning"),
+      v.literal("building"),
+      v.literal("iterating"),
+    ),
+    /** Optional — when called by agent (Inngest), pass internalKey to bypass auth. */
+    internalKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Auth: either valid internalKey (agent caller) or authenticated user who owns the project.
+    if (args.internalKey) {
+      const expected = process.env.POLARIS_CONVEX_INTERNAL_KEY;
+      if (!expected || args.internalKey !== expected) {
+        throw new Error("Invalid internal key");
+      }
+    } else {
+      const identity = await verifyAuth(ctx);
+      const project = await ctx.db.get(args.projectId);
+      if (!project || project.ownerId !== identity.subject) {
+        throw new Error("Unauthorized: not the project owner");
+      }
+    }
+
+    // Transition validation: "building" is always valid (legacy escape hatch).
+    // Otherwise enforce the state machine.
+    if (args.state !== "building") {
+      const project = await ctx.db.get(args.projectId);
+      const current = project?.lifecycleState ?? "building";
+      const VALID_TRANSITIONS: Record<string, string[]> = {
+        empty: ["spec_drafting"],
+        spec_drafting: ["spec_complete"],
+        spec_complete: ["planning"],
+        planning: ["building"],
+        building: ["iterating"],
+        iterating: ["spec_drafting", "planning"],
+      };
+      const allowed = VALID_TRANSITIONS[current] ?? [];
+      if (!allowed.includes(args.state)) {
+        throw new Error(
+          `Invalid lifecycle transition: ${current} → ${args.state}`,
+        );
+      }
+    }
+
+    await ctx.db.patch(args.projectId, {
+      lifecycleState: args.state,
+      updatedAt: Date.now(),
+    });
   },
 });

@@ -4,10 +4,15 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { ChevronDownIcon, TerminalIcon } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { useWebContainer } from "../context/webcontainer-context";
 
-export const TerminalPanel = () => {
+interface TerminalPanelProps {
+  onClose?: () => void;
+}
+
+export const TerminalPanel = ({ onClose }: TerminalPanelProps) => {
     const terminalRef = useRef<HTMLDivElement>(null);
     // Gate on filesReady (not just webcontainer) so the shell only starts
     // after instance.mount() has completed. Without this, on page refresh
@@ -109,5 +114,28 @@ export const TerminalPanel = () => {
     }, [webcontainer, filesReady]);
 
     // Wrapper bg matches xterm theme.background so there's no flash before init
-    return <div ref={terminalRef} className="h-full w-full bg-surface-0 px-2 pt-1" />;
+    return (
+        <div className="h-full w-full flex flex-col bg-surface-0">
+            {/* Terminal header bar */}
+            <div className="h-7 flex items-center justify-between px-2.5 shrink-0 border-b border-surface-3/40">
+                <div className="flex items-center gap-1.5">
+                    <TerminalIcon className="size-3 text-muted-foreground/50" />
+                    <span className="text-[10px] font-medium font-mono text-muted-foreground/60 uppercase tracking-wider">
+                        Terminal
+                    </span>
+                </div>
+                {onClose && (
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="size-5 flex items-center justify-center rounded text-muted-foreground/50 hover:text-foreground hover:bg-surface-2 transition-colors"
+                        aria-label="Close terminal"
+                    >
+                        <ChevronDownIcon className="size-3.5" />
+                    </button>
+                )}
+            </div>
+            <div ref={terminalRef} className="flex-1 min-h-0 px-2 pt-1" />
+        </div>
+    );
 };

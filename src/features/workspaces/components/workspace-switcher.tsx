@@ -69,7 +69,7 @@ export const WorkspaceSwitcher = () => {
   // Loading shimmer — keep the rail tile from popping in/out.
   if (current === undefined) {
     return (
-      <div className="h-10 flex items-center justify-center">
+      <div className="h-8 flex items-center justify-center">
         <Spinner className="size-3.5 text-muted-foreground/50" />
       </div>
     );
@@ -104,7 +104,7 @@ export const WorkspaceSwitcher = () => {
               <button
                 type="button"
                 className={cn(
-                  "h-10 w-full flex items-center justify-center group",
+                  "h-8 flex items-center justify-center group",
                   "text-foreground hover:opacity-90 transition-opacity",
                 )}
                 aria-label={

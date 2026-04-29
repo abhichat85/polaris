@@ -1,12 +1,15 @@
 "use client"
 
 /**
- * D-026 — Plan pane. Renders the structured plan from convex/specs.getPlan
- * as an editable checklist grouped by sprint. Tick boxes update agent +
- * UI state in real time (Convex live queries).
+ * Build Plan pane (Technical Spec). Reads from the buildPlans table —
+ * the agent-owned implementation plan derived from the Product Spec.
+ *
+ * Renders a sprint-grouped task checklist with status icons, priority
+ * badges, and spec-feature traceability links. Agent-generated, not
+ * user-editable (users can trigger regeneration via the agent).
  *
  * Praxiom design: §7.4 status chips, §4.3 left-edge accent for sprints in
- * progress, JetBrains Mono for feature ids.
+ * progress, JetBrains Mono for task ids.
  */
 
 import { useMemo } from "react"
@@ -17,6 +20,7 @@ import {
   CircleDotIcon,
   AlertCircleIcon,
   Loader2Icon,
+  LockIcon,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -24,6 +28,16 @@ import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
 
 type Status = "todo" | "in_progress" | "done" | "blocked"
+
+/** Shared shape for items rendered in the plan pane (tasks or legacy features). */
+interface PlanItem {
+  id: string
+  title: string
+  status: Status
+  priority: "p0" | "p1" | "p2"
+  sprint?: number
+  description?: string
+}
 
 const STATUS_META: Record<Status, { icon: typeof CheckCircleIcon; tone: string }> = {
   todo: { icon: CircleIcon, tone: "text-muted-foreground/60" },
@@ -43,12 +57,32 @@ interface Props {
 }
 
 export const PlanPane = ({ projectId }: Props) => {
-  const plan = useQuery(api.specs.getPlan, { projectId })
+  // Read from buildPlans (Technical Spec), not specs (Product Spec).
+  // Falls back to specs.getPlan for legacy projects that haven't been migrated.
+  const buildPlan = useQuery(api.buildPlans.getByProject, { projectId })
+  const legacyPlan = useQuery(api.specs.getPlan, { projectId })
+
+  // Use buildPlan if available, otherwise fall back to legacy.
+  const plan = buildPlan ?? legacyPlan
+  const isLegacy = !buildPlan && !!legacyPlan
+
+  // Unified items — buildPlans uses "tasks", legacy uses "features".
+  // Both share id, title, status, priority, sprint — that's all we render.
+  const items: PlanItem[] | null = plan
+    ? ("tasks" in plan ? plan.tasks : plan.features).map((f) => ({
+        id: f.id,
+        title: f.title,
+        status: f.status as Status,
+        priority: f.priority as "p0" | "p1" | "p2",
+        sprint: f.sprint,
+        description: "description" in f ? (f.description as string | undefined) : undefined,
+      }))
+    : null
 
   const grouped = useMemo(() => {
-    if (!plan) return null
-    const bySprint = new Map<number, typeof plan.features>()
-    for (const f of plan.features) {
+    if (!items) return null
+    const bySprint = new Map<number, PlanItem[]>()
+    for (const f of items) {
       const k = f.sprint ?? 0
       if (!bySprint.has(k)) bySprint.set(k, [])
       bySprint.get(k)!.push(f)
@@ -56,9 +90,9 @@ export const PlanPane = ({ projectId }: Props) => {
     return Array.from(bySprint.entries())
       .sort((a, b) => a[0] - b[0])
       .map(([sprint, features]) => ({ sprint, features }))
-  }, [plan])
+  }, [items])
 
-  if (plan === undefined) {
+  if (buildPlan === undefined && legacyPlan === undefined) {
     return (
       <div className="h-full flex items-center justify-center bg-surface-1">
         <Loader2Icon className="size-4 animate-spin text-muted-foreground/50" />
@@ -66,31 +100,34 @@ export const PlanPane = ({ projectId }: Props) => {
     )
   }
 
-  if (plan === null) {
+  if (!plan || !items) {
     return (
       <div className="h-full bg-surface-1 p-4 flex flex-col gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-          Plan
+          Build Plan
         </span>
         <p className="text-sm text-muted-foreground/80 leading-relaxed">
-          No plan yet. Send your first message to generate one.
+          Build Plan will be generated when the agent enters plan mode.
+          The plan is derived from your Product Spec.
         </p>
       </div>
     )
   }
 
-  const total = plan.features.length
-  const done = plan.features.filter((f) => f.status === "done").length
+  const total = items.length
+  const done = items.filter((f) => f.status === "done").length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
   return (
     <div className="h-full flex flex-col bg-surface-1 overflow-hidden">
-      {/* Praxiom-quality panel header */}
+      {/* Panel header */}
       <div className="h-10 px-3 flex items-center justify-between shrink-0 border-b border-surface-3/60">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50 shrink-0">
             Build Plan
           </span>
+          {/* Agent-owned badge */}
+          <LockIcon className="size-2.5 text-muted-foreground/30 shrink-0" />
           <span className="text-surface-3 shrink-0">·</span>
           <span className="text-[10px] font-mono tabular-nums text-muted-foreground/60 shrink-0">
             {done}/{total}

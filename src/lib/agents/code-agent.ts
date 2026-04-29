@@ -664,12 +664,21 @@ async function executeToolCall(
             const featureId = toolInput.featureId!;
             const status = toolInput.status!;
             try {
-                const r = await convex.mutation(api.specs.setFeatureStatus, {
-                    internalKey,
-                    projectId,
-                    featureId,
-                    status,
-                });
+                // Write to both buildPlans (new) and specs (legacy) for back-compat.
+                const [r] = await Promise.all([
+                    convex.mutation(api.specs.setFeatureStatus, {
+                        internalKey,
+                        projectId,
+                        featureId,
+                        status,
+                    }),
+                    convex.mutation(api.buildPlans.setTaskStatus, {
+                        internalKey,
+                        projectId,
+                        taskId: featureId,
+                        status,
+                    }).catch(() => {}), // buildPlan may not exist yet for legacy projects
+                ]);
                 if (!r?.ok) {
                     return {
                         result: {

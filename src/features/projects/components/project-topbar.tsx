@@ -8,7 +8,13 @@
  */
 
 import { useState } from "react";
-import { CloudCheckIcon, GithubIcon, LoaderIcon } from "lucide-react";
+import { useQuery } from "convex/react";
+import {
+  CloudCheckIcon,
+  FileTextIcon,
+  ListChecksIcon,
+  LoaderIcon,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 import {
@@ -16,20 +22,21 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { useProject, useRenameProject } from "../hooks/use-projects";
 
 interface Props {
   projectId: Id<"projects">;
-  onOpenExport: () => void;
 }
 
-export const ProjectTopbar = ({ projectId, onOpenExport }: Props) => {
+export const ProjectTopbar = ({ projectId }: Props) => {
   const project = useProject(projectId);
   const renameProject = useRenameProject();
+  const spec = useQuery(api.specs.getByProject, { projectId });
+  const buildPlan = useQuery(api.buildPlans.getByProject, { projectId });
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [name, setName] = useState("");
@@ -115,17 +122,23 @@ export const ProjectTopbar = ({ projectId, onOpenExport }: Props) => {
         </Tooltip>
       </div>
 
-      {/* Right: actions */}
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5 hidden sm:flex"
-          onClick={onOpenExport}
-        >
-          <GithubIcon className="size-3.5" />
-          Export
-        </Button>
+      {/* Right: spec + plan status chips */}
+      <div className="flex items-center gap-2">
+        {spec && spec.features?.length > 0 && (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/50 font-mono tabular-nums">
+            <FileTextIcon className="size-3 text-muted-foreground/30" />
+            <span>{spec.features.length} features</span>
+          </div>
+        )}
+        {buildPlan && buildPlan.tasks?.length > 0 && (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/50 font-mono tabular-nums">
+            <ListChecksIcon className="size-3 text-muted-foreground/30" />
+            <span>
+              {buildPlan.tasks.filter((t: { status: string }) => t.status === "done").length}/
+              {buildPlan.tasks.length} tasks
+            </span>
+          </div>
+        )}
       </div>
     </header>
   );

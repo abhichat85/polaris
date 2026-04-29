@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { MonitorIcon, TerminalIcon } from "lucide-react";
+import { FilesIcon, MonitorIcon, TerminalIcon } from "lucide-react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 
@@ -50,6 +50,20 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
   });
 
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Persist terminal open/closed state across refreshes via localStorage.
+  const [showTerminal, setShowTerminal] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem("polaris:terminal-open") !== "0";
+  });
+
+  const toggleTerminal = () => {
+    setShowTerminal((v) => {
+      const next = !v;
+      window.localStorage.setItem("polaris:terminal-open", next ? "1" : "0");
+      return next;
+    });
+  };
 
   // Auto-open preview the first time the dev server comes up.
   const serverUrlRef = useRef<string | null>(null);
@@ -133,8 +147,20 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
       <div className="flex items-center bg-surface-1 h-10 shrink-0 border-b border-surface-3/60">
         <TopNavigation projectId={projectId} />
 
-        {/* Preview toggle — labeled, with server-status dot */}
+        {/* Toolbar toggles — preview + terminal */}
         <div className="flex items-center gap-1 px-2 h-full ml-auto shrink-0">
+          <Button
+            variant={showTerminal ? "secondary" : "ghost"}
+            size="sm"
+            onClick={toggleTerminal}
+            className={cn(
+              "h-7 gap-1.5 text-xs font-medium",
+              !showTerminal && "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Terminal
+            <TerminalIcon className="size-3.5" />
+          </Button>
           <Button
             variant={showPreview ? "secondary" : "ghost"}
             size="sm"
@@ -173,8 +199,11 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
               <EditorContent />
             )}
           </Allotment.Pane>
-          <Allotment.Pane minSize={100} preferredSize={180} visible>
-            <TerminalPanel />
+          <Allotment.Pane minSize={100} preferredSize={180} snap visible={showTerminal}>
+            <TerminalPanel onClose={() => {
+              setShowTerminal(false);
+              window.localStorage.setItem("polaris:terminal-open", "0");
+            }} />
           </Allotment.Pane>
         </Allotment>
       </div>
@@ -198,18 +227,37 @@ function EditorEmptyState({
   bootError: string | null;
   onRetry: () => void;
 }) {
+  // Once the server is running, show only a minimal "open a file" prompt.
+  // The full boot step ladder is noise at this point.
+  if (bootPhase === "running") {
+    return (
+      <div className="size-full flex flex-col items-center justify-center gap-4 px-8">
+        <div className="size-10 rounded-xl bg-surface-2/60 flex items-center justify-center">
+          <FilesIcon className="size-4 text-muted-foreground/40" />
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium text-muted-foreground/70">
+            Open a file to start editing
+          </p>
+          <p className="text-xs text-muted-foreground/40 leading-relaxed">
+            Click any file in the Explorer sidebar
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const phaseLabel =
     bootPhase === "installing"
       ? "Installing dependencies…"
       : bootPhase === "starting"
       ? "Starting dev server…"
-      : bootPhase === "running"
-      ? "Dev server running"
       : bootPhase === "failed"
       ? "Boot failed"
       : wcLoading
       ? "Starting environment…"
       : "Environment ready";
+
   return (
     <div className="size-full flex flex-col items-center justify-center gap-6 px-8">
       {/* Brand mark */}
@@ -228,9 +276,7 @@ function EditorEmptyState({
           <span
             className={cn(
               "size-1.5 rounded-full shrink-0",
-              bootPhase === "running"
-                ? "bg-success"
-                : bootPhase === "failed"
+              bootPhase === "failed"
                 ? "bg-destructive"
                 : bootPhase === "installing" || bootPhase === "starting" || wcLoading
                 ? "bg-warning/70 animate-pulse"
@@ -240,7 +286,7 @@ function EditorEmptyState({
           <span className="text-xs text-muted-foreground">{phaseLabel}</span>
         </div>
 
-        {/* Steps — driven by phases, not user input */}
+        {/* Steps — shown only while still booting */}
         <div className="flex flex-col gap-1.5">
           <Step
             done={!wcLoading}
@@ -248,7 +294,7 @@ function EditorEmptyState({
             detail="WebContainer sandbox is ready"
           />
           <Step
-            done={bootPhase === "starting" || bootPhase === "running"}
+            done={bootPhase === "starting"}
             label="Dependencies installed"
             detail={
               bootPhase === "installing"
@@ -259,29 +305,13 @@ function EditorEmptyState({
             }
           />
           <Step
-            done={bootPhase === "running"}
-            label="Dev server running"
-            detail={
-              serverUrl ? (
-                <a
-                  href={serverUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary underline underline-offset-2 hover:opacity-80"
-                >
-                  {serverUrl}
-                </a>
-              ) : bootPhase === "starting" ? (
-                "Waiting for first request…"
-              ) : (
-                "Will start automatically after install"
-              )
-            }
-          />
-          <Step
             done={false}
-            label="Open a file"
-            detail="Click any file in the Explorer to edit"
+            label="Starting dev server"
+            detail={
+              bootPhase === "starting"
+                ? "Waiting for first request…"
+                : "Will start automatically after install"
+            }
           />
         </div>
 

@@ -45,6 +45,18 @@ export const upsertSpec = mutation({
       v.literal("praxiom"),
     ),
     praxiomDocumentId: v.optional(v.string()),
+    source: v.optional(
+      v.union(
+        v.literal("user"),
+        v.literal("praxiom"),
+        v.literal("agent"),
+        v.literal("upload"),
+        v.literal("github"),
+      ),
+    ),
+    specStatus: v.optional(
+      v.union(v.literal("drafting"), v.literal("complete")),
+    ),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -52,18 +64,41 @@ export const upsertSpec = mutation({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .first()
 
-    const data = {
-      projectId: args.projectId,
-      features: args.features,
-      updatedAt: Date.now(),
-      updatedBy: args.updatedBy,
-      praxiomDocumentId: args.praxiomDocumentId,
+    if (existing) {
+      const patch: Record<string, unknown> = {
+        projectId: args.projectId,
+        features: args.features,
+        updatedAt: Date.now(),
+        updatedBy: args.updatedBy,
+        praxiomDocumentId: args.praxiomDocumentId,
+      }
+      if (args.source) patch.source = args.source
+      if (args.specStatus) patch.specStatus = args.specStatus
+      await ctx.db.patch(existing._id, patch)
+    } else {
+      // For inserts, build the full document with all required fields.
+      await ctx.db.insert("specs", {
+        projectId: args.projectId,
+        features: args.features,
+        updatedAt: Date.now(),
+        updatedBy: args.updatedBy,
+        praxiomDocumentId: args.praxiomDocumentId,
+        ...(args.source ? { source: args.source } : {}),
+        ...(args.specStatus ? { specStatus: args.specStatus } : {}),
+      })
     }
 
-    if (existing) {
-      await ctx.db.patch(existing._id, data)
-    } else {
-      await ctx.db.insert("specs", data)
+    // Auto-transition lifecycle: if the project is "empty" and we're now
+    // writing a spec, move to "spec_drafting". This ensures the lifecycle
+    // state machine has no dead states.
+    if (args.features.length > 0) {
+      const project = await ctx.db.get(args.projectId)
+      if (project && (project.lifecycleState === "empty" || !project.lifecycleState)) {
+        await ctx.db.patch(args.projectId, {
+          lifecycleState: "spec_drafting",
+          updatedAt: Date.now(),
+        })
+      }
     }
   },
 })
