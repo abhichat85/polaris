@@ -8,7 +8,7 @@
  */
 
 import { useState } from "react";
-import { CloudCheckIcon, GithubIcon, LoaderIcon } from "lucide-react";
+import { CloudCheckIcon, LoaderIcon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 import {
@@ -16,7 +16,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -24,10 +23,9 @@ import { useProject, useRenameProject } from "../hooks/use-projects";
 
 interface Props {
   projectId: Id<"projects">;
-  onOpenExport: () => void;
 }
 
-export const ProjectTopbar = ({ projectId, onOpenExport }: Props) => {
+export const ProjectTopbar = ({ projectId }: Props) => {
   const project = useProject(projectId);
   const renameProject = useRenameProject();
 
@@ -115,18 +113,8 @@ export const ProjectTopbar = ({ projectId, onOpenExport }: Props) => {
         </Tooltip>
       </div>
 
-      {/* Right: actions */}
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5 hidden sm:flex"
-          onClick={onOpenExport}
-        >
-          <GithubIcon className="size-3.5" />
-          Export
-        </Button>
-      </div>
+      {/* Right: reserved for future status chips (Tier 3) */}
+      <div className="flex items-center gap-1" />
     </header>
   );
 };

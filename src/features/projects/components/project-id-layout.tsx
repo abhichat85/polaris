@@ -108,10 +108,7 @@ export const ProjectIdLayout = ({
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <ProjectTopbar
-          projectId={projectId}
-          onOpenExport={() => setExportOpen(true)}
-        />
+        <ProjectTopbar projectId={projectId} />
 
         <div className="flex-1 min-h-0">
           <Allotment proportionalLayout={false}>
