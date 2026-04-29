@@ -69,12 +69,16 @@ export const ProjectIdLayout = ({
   const [agentOpen, setAgentOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
 
-  // When lifecycle transitions from spec phase to building, switch left pane to plan.
+  // Sync left pane with lifecycle phase:
+  // - In spec phase: force hidden (no file explorer needed).
+  // - Exiting spec phase: switch to plan view.
   useEffect(() => {
-    if (!isSpecPhase && leftMode === "hidden") {
+    if (isSpecPhase && leftMode !== "hidden") {
+      setLeftMode("hidden");
+    } else if (!isSpecPhase && leftMode === "hidden") {
       setLeftMode("plan");
     }
-  }, [isSpecPhase, leftMode]);
+  }, [isSpecPhase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist sidebar collapsed state across refreshes.
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
