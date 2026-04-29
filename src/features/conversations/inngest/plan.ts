@@ -127,6 +127,7 @@ export const planRun = inngest.createFunction(
     // was created too — skip straight to building.)
     await step.run("transition-lifecycle", async () => {
       await convex.mutation(api.projects.transitionLifecycle, {
+        internalKey,
         projectId: data.projectId as Id<"projects">,
         state: "building",
       })

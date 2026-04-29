@@ -109,6 +109,7 @@ export const agentLoop = inngest.createFunction(
     // earlier state (empty, spec_drafting, spec_complete, planning), the
     // agent starting to run means we're now building.
     await convex.mutation(api.projects.transitionLifecycle, {
+      internalKey,
       projectId: data.projectId as Id<"projects">,
       state: "building",
     }).catch(() => {}) // Non-critical — don't block the agent loop.
