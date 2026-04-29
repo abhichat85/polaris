@@ -122,6 +122,16 @@ export const planRun = inngest.createFunction(
       })
     })
 
+    // Step 2b — transition lifecycle: planning → building.
+    // (If project was in empty/spec_drafting, the plan write implies spec
+    // was created too — skip straight to building.)
+    await step.run("transition-lifecycle", async () => {
+      await convex.mutation(api.projects.transitionLifecycle, {
+        projectId: data.projectId as Id<"projects">,
+        state: "building",
+      })
+    })
+
     // Step 3 — drop /docs/plan.md into the project file tree so the user
     // sees it in the file explorer + the agent can read it back later.
     await step.run("write-plan-md", async () => {

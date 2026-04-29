@@ -105,6 +105,14 @@ export const agentLoop = inngest.createFunction(
     }
     const convex = new ConvexHttpClient(convexUrl)
 
+    // Ensure lifecycle is at least "building" — if the project was in an
+    // earlier state (empty, spec_drafting, spec_complete, planning), the
+    // agent starting to run means we're now building.
+    await convex.mutation(api.projects.transitionLifecycle, {
+      projectId: data.projectId as Id<"projects">,
+      state: "building",
+    }).catch(() => {}) // Non-critical — don't block the agent loop.
+
     // D-025 — resolve the user's plan once, use it for budget AND quota.
     const customer = await convex.query(api.customers.getByUser, {
       userId: data.userId,
