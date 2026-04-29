@@ -16,7 +16,7 @@
  * The center pane is `{children}` — the route's page renders the editor.
  */
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Allotment } from "allotment";
 
 import { ConversationSidebar } from "@/features/conversations/components/conversation-sidebar";
@@ -56,6 +56,32 @@ export const ProjectIdLayout = ({
   const [agentOpen, setAgentOpen] = useState(true);
   const [exportOpen, setExportOpen] = useState(false);
 
+  // Persist sidebar collapsed state across refreshes.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("polaris:sidebar-collapsed") === "1";
+  });
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      window.localStorage.setItem("polaris:sidebar-collapsed", next ? "1" : "0");
+      return next;
+    });
+  }, []);
+
+  // Cmd+B / Ctrl+B keyboard shortcut to toggle sidebar (VS Code convention).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggleSidebar]);
+
   // Praxiom — toggling: closed → open; open → closed. Each toggles
   // independently within the same pane (only one mode visible at a time).
   const handleToggleFiles = () =>
@@ -72,6 +98,8 @@ export const ProjectIdLayout = ({
         planOpen={leftMode === "plan"}
         specOpen={leftMode === "spec"}
         agentOpen={agentOpen}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
         onToggleFiles={handleToggleFiles}
         onTogglePlan={handleTogglePlan}
         onToggleSpec={handleToggleSpec}
@@ -89,7 +117,7 @@ export const ProjectIdLayout = ({
           <Allotment proportionalLayout={false}>
             <Allotment.Pane
               snap
-              visible={leftMode !== "hidden"}
+              visible={!sidebarCollapsed && leftMode !== "hidden"}
               minSize={LEFT_MIN}
               maxSize={LEFT_MAX}
               preferredSize={LEFT_DEFAULT}

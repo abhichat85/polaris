@@ -18,6 +18,8 @@ import {
   GithubIcon,
   ListChecksIcon,
   MessageSquareIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
   SettingsIcon,
 } from "lucide-react";
 
@@ -32,6 +34,8 @@ interface NavItemProps {
   onClick?: () => void;
   /** Small primary dot in the corner — signals background activity. */
   pulse?: boolean;
+  /** When true, render icon-only with tooltip label. */
+  collapsed?: boolean;
 }
 
 const NavItem = ({
@@ -40,14 +44,17 @@ const NavItem = ({
   active,
   onClick,
   pulse,
+  collapsed,
 }: NavItemProps) => (
   <button
     type="button"
     onClick={onClick}
     aria-label={label}
     aria-pressed={active}
+    title={collapsed ? label : undefined}
     className={cn(
-      "relative w-full h-8 flex items-center gap-2.5 px-2.5 rounded-md transition-colors group",
+      "relative w-full h-8 flex items-center rounded-md transition-colors group",
+      collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
       "text-muted-foreground hover:text-foreground hover:bg-surface-2",
       active && "text-foreground bg-surface-2",
     )}
@@ -60,24 +67,38 @@ const NavItem = ({
       )}
     />
     <Icon className="size-3.5 shrink-0" />
-    <span className="text-xs font-medium tracking-[-0.01em] truncate">{label}</span>
+    {!collapsed && (
+      <span className="text-xs font-medium tracking-[-0.01em] truncate">{label}</span>
+    )}
     {pulse && (
-      <span className="ml-auto size-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+      <span
+        className={cn(
+          "size-1.5 rounded-full bg-primary animate-pulse shrink-0",
+          collapsed ? "absolute top-1 right-1" : "ml-auto",
+        )}
+      />
     )}
   </button>
 );
 
-const SectionLabel = ({ children }: { children: React.ReactNode }) => (
-  <p className="px-2.5 pt-3 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50 select-none">
-    {children}
-  </p>
-);
+const SectionLabel = ({ children, collapsed }: { children: React.ReactNode; collapsed?: boolean }) => {
+  if (collapsed) {
+    return <div className="h-px bg-surface-3/60 mx-1.5 my-2" />;
+  }
+  return (
+    <p className="px-2.5 pt-3 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50 select-none">
+      {children}
+    </p>
+  );
+};
 
 interface IdeRailProps {
   filesOpen: boolean;
   planOpen: boolean;
   specOpen: boolean;
   agentOpen: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   onToggleFiles: () => void;
   onTogglePlan: () => void;
   onToggleSpec: () => void;
@@ -90,6 +111,8 @@ export const IdeRail = ({
   planOpen,
   specOpen,
   agentOpen,
+  collapsed = false,
+  onToggleCollapse,
   onToggleFiles,
   onTogglePlan,
   onToggleSpec,
@@ -97,15 +120,20 @@ export const IdeRail = ({
   onOpenExport,
 }: IdeRailProps) => {
   const router = useRouter();
+  const CollapseIcon = collapsed ? PanelLeftOpenIcon : PanelLeftCloseIcon;
 
   return (
-    <aside className="w-44 shrink-0 bg-surface-1 flex flex-col py-2 overflow-hidden">
-
-      {/* Brand + workspace — single row */}
-      <div className="h-10 flex items-center justify-between px-3 shrink-0">
+    <aside
+      className={cn(
+        "shrink-0 bg-surface-1 flex flex-col py-2 overflow-hidden border-r border-surface-3/40 transition-[width] duration-200",
+        collapsed ? "w-10" : "w-44",
+      )}
+    >
+      {/* Brand + workspace */}
+      <div className={cn("h-10 flex items-center shrink-0", collapsed ? "justify-center px-0" : "justify-between px-3")}>
         <Link
           href="/dashboard"
-          className="flex items-center gap-2 group min-w-0"
+          className={cn("flex items-center group min-w-0", collapsed ? "gap-0" : "gap-2")}
           aria-label="Polaris home"
         >
           <Image
@@ -115,41 +143,48 @@ export const IdeRail = ({
             height={18}
             className="opacity-90 group-hover:opacity-100 transition-opacity shrink-0"
           />
-          <span className="font-heading text-sm font-semibold tracking-[-0.02em] text-foreground group-hover:text-primary transition-colors truncate">
-            Polaris
-          </span>
+          {!collapsed && (
+            <span className="font-heading text-sm font-semibold tracking-[-0.02em] text-foreground group-hover:text-primary transition-colors truncate">
+              Polaris
+            </span>
+          )}
         </Link>
-        <div className="shrink-0">
-          <WorkspaceSwitcher />
-        </div>
+        {!collapsed && (
+          <div className="shrink-0">
+            <WorkspaceSwitcher />
+          </div>
+        )}
       </div>
 
-      <div className="h-px bg-surface-3 mx-2.5 my-1.5" />
+      <div className={cn("h-px bg-surface-3", collapsed ? "mx-1.5 my-1.5" : "mx-2.5 my-1.5")} />
 
       {/* Navigation */}
-      <div className="flex-1 flex flex-col px-1.5 min-h-0 overflow-y-auto scrollbar-thin">
-        <SectionLabel>Workspace</SectionLabel>
+      <div className={cn("flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-thin", collapsed ? "px-0.5" : "px-1.5")}>
+        <SectionLabel collapsed={collapsed}>Workspace</SectionLabel>
 
         <NavItem
           icon={FilesIcon}
           label="Explorer"
           active={filesOpen}
           onClick={onToggleFiles}
+          collapsed={collapsed}
         />
         <NavItem
           icon={ListChecksIcon}
           label="Build Plan"
           active={planOpen}
           onClick={onTogglePlan}
+          collapsed={collapsed}
         />
         <NavItem
           icon={FileTextIcon}
           label="Spec"
           active={specOpen}
           onClick={onToggleSpec}
+          collapsed={collapsed}
         />
 
-        <SectionLabel>Tools</SectionLabel>
+        <SectionLabel collapsed={collapsed}>Tools</SectionLabel>
 
         <NavItem
           icon={MessageSquareIcon}
@@ -157,30 +192,62 @@ export const IdeRail = ({
           active={agentOpen}
           onClick={onToggleAgent}
           pulse={agentOpen}
+          collapsed={collapsed}
         />
         <NavItem
           icon={GithubIcon}
           label="Export"
           onClick={onOpenExport}
+          collapsed={collapsed}
         />
       </div>
 
-      {/* Bottom cluster — settings + identity + plan */}
-      <div className="px-1.5 pt-2 border-t border-surface-3 mt-1 space-y-0.5">
+      {/* Bottom cluster — settings + identity + collapse toggle */}
+      <div className={cn("pt-2 border-t border-surface-3 mt-1 space-y-0.5", collapsed ? "px-0.5" : "px-1.5")}>
         <NavItem
           icon={SettingsIcon}
           label="Settings"
           onClick={() => router.push("/settings")}
+          collapsed={collapsed}
         />
 
-        <div className="flex items-center gap-2.5 px-2.5 h-8">
-          <UserButton
-            appearance={{
-              elements: { avatarBox: "size-5" },
-            }}
-          />
-          <PlanBadge />
-        </div>
+        {collapsed ? (
+          <div className="flex items-center justify-center h-8">
+            <UserButton
+              appearance={{
+                elements: { avatarBox: "size-5" },
+              }}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 px-2.5 h-8">
+            <UserButton
+              appearance={{
+                elements: { avatarBox: "size-5" },
+              }}
+            />
+            <PlanBadge />
+          </div>
+        )}
+
+        {/* Sidebar collapse/expand toggle */}
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title={collapsed ? "Expand sidebar (⌘B)" : "Collapse sidebar (⌘B)"}
+            className={cn(
+              "w-full h-7 flex items-center rounded-md transition-colors",
+              "text-muted-foreground/50 hover:text-foreground hover:bg-surface-2",
+              collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
+            )}
+          >
+            <CollapseIcon className="size-3.5 shrink-0" />
+            {!collapsed && (
+              <span className="text-[10px] font-medium tracking-[-0.01em]">Collapse</span>
+            )}
+          </button>
+        )}
       </div>
     </aside>
   );
