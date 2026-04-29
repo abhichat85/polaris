@@ -45,6 +45,18 @@ export const upsertSpec = mutation({
       v.literal("praxiom"),
     ),
     praxiomDocumentId: v.optional(v.string()),
+    source: v.optional(
+      v.union(
+        v.literal("user"),
+        v.literal("praxiom"),
+        v.literal("agent"),
+        v.literal("upload"),
+        v.literal("github"),
+      ),
+    ),
+    specStatus: v.optional(
+      v.union(v.literal("drafting"), v.literal("complete")),
+    ),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -52,18 +64,21 @@ export const upsertSpec = mutation({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .first()
 
-    const data = {
+    const data: Record<string, unknown> = {
       projectId: args.projectId,
       features: args.features,
       updatedAt: Date.now(),
       updatedBy: args.updatedBy,
       praxiomDocumentId: args.praxiomDocumentId,
     }
+    // Only set source/specStatus if provided (don't overwrite with undefined)
+    if (args.source) data.source = args.source
+    if (args.specStatus) data.specStatus = args.specStatus
 
     if (existing) {
       await ctx.db.patch(existing._id, data)
     } else {
-      await ctx.db.insert("specs", data)
+      await ctx.db.insert("specs", data as any)
     }
   },
 })

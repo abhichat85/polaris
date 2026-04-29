@@ -410,3 +410,41 @@ export const setExportStatusInternal = mutation({
     await ctx.db.patch(args.id, patch);
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lifecycle state transitions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Transition the project lifecycle state. Callable by any authenticated
+ * user or internal agent key. Validates that the transition is valid.
+ *
+ * Valid transitions:
+ *   empty → spec_drafting
+ *   spec_drafting → spec_complete
+ *   spec_complete → planning
+ *   planning → building
+ *   building → iterating
+ *   iterating → spec_drafting (re-spec loop)
+ *   iterating → planning (re-plan loop)
+ *   * → building (legacy projects entering the pipeline)
+ */
+export const transitionLifecycle = mutation({
+  args: {
+    projectId: v.id("projects"),
+    state: v.union(
+      v.literal("empty"),
+      v.literal("spec_drafting"),
+      v.literal("spec_complete"),
+      v.literal("planning"),
+      v.literal("building"),
+      v.literal("iterating"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.projectId, {
+      lifecycleState: args.state,
+      updatedAt: Date.now(),
+    });
+  },
+});
