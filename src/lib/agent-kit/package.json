@@ -1,0 +1,9 @@
+{
+  "name": "@polaris/agent-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reusable agent runtime primitives extracted from Polaris.",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "license": "UNLICENSED"
+}
