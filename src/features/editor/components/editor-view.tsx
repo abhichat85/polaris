@@ -51,6 +51,20 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
 
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Persist terminal open/closed state across refreshes via localStorage.
+  const [showTerminal, setShowTerminal] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem("polaris:terminal-open") !== "0";
+  });
+
+  const toggleTerminal = () => {
+    setShowTerminal((v) => {
+      const next = !v;
+      window.localStorage.setItem("polaris:terminal-open", next ? "1" : "0");
+      return next;
+    });
+  };
+
   // Auto-open preview the first time the dev server comes up.
   const serverUrlRef = useRef<string | null>(null);
   useEffect(() => {
@@ -133,8 +147,20 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
       <div className="flex items-center bg-surface-1 h-10 shrink-0 border-b border-surface-3/60">
         <TopNavigation projectId={projectId} />
 
-        {/* Preview toggle — labeled, with server-status dot */}
+        {/* Toolbar toggles — preview + terminal */}
         <div className="flex items-center gap-1 px-2 h-full ml-auto shrink-0">
+          <Button
+            variant={showTerminal ? "secondary" : "ghost"}
+            size="sm"
+            onClick={toggleTerminal}
+            className={cn(
+              "h-7 gap-1.5 text-xs font-medium",
+              !showTerminal && "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Terminal
+            <TerminalIcon className="size-3.5" />
+          </Button>
           <Button
             variant={showPreview ? "secondary" : "ghost"}
             size="sm"
@@ -173,8 +199,11 @@ const EditorViewContent = ({ projectId }: { projectId: Id<"projects"> }) => {
               <EditorContent />
             )}
           </Allotment.Pane>
-          <Allotment.Pane minSize={100} preferredSize={180} visible>
-            <TerminalPanel />
+          <Allotment.Pane minSize={100} preferredSize={180} snap visible={showTerminal}>
+            <TerminalPanel onClose={() => {
+              setShowTerminal(false);
+              window.localStorage.setItem("polaris:terminal-open", "0");
+            }} />
           </Allotment.Pane>
         </Allotment>
       </div>
