@@ -9,10 +9,14 @@ import { useWebContainer } from "../context/webcontainer-context";
 
 export const TerminalPanel = () => {
     const terminalRef = useRef<HTMLDivElement>(null);
-    const { webcontainer } = useWebContainer();
+    // Gate on filesReady (not just webcontainer) so the shell only starts
+    // after instance.mount() has completed. Without this, on page refresh
+    // the webcontainer ref exists immediately (module-scope singleton) but
+    // the filesystem isn't mounted yet — "cd / && ls" shows an empty root.
+    const { webcontainer, filesReady } = useWebContainer();
 
     useEffect(() => {
-        if (!terminalRef.current || !webcontainer) return;
+        if (!terminalRef.current || !webcontainer || !filesReady) return;
 
         // Praxiom — terminal theme matches surface-0 (deepest), silver-bright fg, indigo cursor.
         // Hardcoded values are required because xterm config doesn't accept CSS variables.
@@ -46,11 +50,15 @@ export const TerminalPanel = () => {
         let shellProcess: any = null;
 
         const startShell = async () => {
+            // CRITICAL: do NOT set HOME=/. That pollutes the project root with
+            // npm cache dirs (`.npm/_locks`, `.npm/_logs`) which then conflict
+            // with our mounted files and corrupt npm state. Let HOME default.
             const shell = await webcontainer.spawn("jsh", {
                 terminal: {
                     cols: terminal.cols,
                     rows: terminal.rows,
                 },
+                env: { TERM: "xterm-256color" },
             });
 
             shellProcess = shell;
@@ -69,6 +77,13 @@ export const TerminalPanel = () => {
             terminal.onData((data) => {
                 input.write(data);
             });
+
+            // Navigate to the project root and list files so the user can
+            // see what's there. Install + dev are handled programmatically
+            // by WebContainerProvider's auto-boot pipeline — the terminal
+            // is purely interactive (for ad-hoc commands, edits, etc.).
+            await new Promise<void>((resolve) => setTimeout(resolve, 300));
+            input.write("cd / && ls\n");
 
             return shell;
         };
@@ -91,7 +106,7 @@ export const TerminalPanel = () => {
             terminal.dispose();
             // shellProcess?.kill(); // xterm dispose handles UI, process cleanup is tricky here without strict lifecycle
         };
-    }, [webcontainer]);
+    }, [webcontainer, filesReady]);
 
     // Wrapper bg matches xterm theme.background so there's no flash before init
     return <div ref={terminalRef} className="h-full w-full bg-surface-0 px-2 pt-1" />;
