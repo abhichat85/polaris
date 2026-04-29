@@ -101,30 +101,30 @@ export const IdeRail = ({
   return (
     <aside className="w-44 shrink-0 bg-surface-1 flex flex-col py-2 overflow-hidden">
 
-      {/* Brand */}
-      <Link
-        href="/dashboard"
-        className="h-10 flex items-center gap-2.5 px-3 group mb-1"
-        aria-label="Polaris home"
-      >
-        <Image
-          src="/logo.svg"
-          alt="Polaris"
-          width={18}
-          height={18}
-          className="opacity-90 group-hover:opacity-100 transition-opacity shrink-0"
-        />
-        <span className="font-heading text-sm font-semibold tracking-[-0.02em] text-foreground group-hover:text-primary transition-colors">
-          Polaris
-        </span>
-      </Link>
-
-      {/* Workspace switcher — compact tile, left-aligned */}
-      <div className="px-1.5">
-        <WorkspaceSwitcher />
+      {/* Brand + workspace — single row */}
+      <div className="h-10 flex items-center justify-between px-3 shrink-0">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-2 group min-w-0"
+          aria-label="Polaris home"
+        >
+          <Image
+            src="/logo.svg"
+            alt="Polaris"
+            width={18}
+            height={18}
+            className="opacity-90 group-hover:opacity-100 transition-opacity shrink-0"
+          />
+          <span className="font-heading text-sm font-semibold tracking-[-0.02em] text-foreground group-hover:text-primary transition-colors truncate">
+            Polaris
+          </span>
+        </Link>
+        <div className="shrink-0">
+          <WorkspaceSwitcher />
+        </div>
       </div>
 
-      <div className="h-px bg-surface-3 mx-2.5 my-2.5" />
+      <div className="h-px bg-surface-3 mx-2.5 my-1.5" />
 
       {/* Navigation */}
       <div className="flex-1 flex flex-col px-1.5 min-h-0 overflow-y-auto scrollbar-thin">
