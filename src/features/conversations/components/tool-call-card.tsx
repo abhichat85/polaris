@@ -6,27 +6,29 @@
  * Surface: bg-surface-3 with rounded-lg per §7.2. Status chips use the
  * documented opacity-tinted semantic colors. run_command output is rendered
  * in font-mono per §3.1.
+ *
+ * Phase 4 enrichment: pulls per-tool metadata (icon name, verb, category,
+ * risk) from `@/lib/agents/tool-meta`. Adds a category-tinted left border
+ * accent, an active-vs-done verb label ("Reading…" vs "Read"), and a small
+ * red destructive flag dot when the tool can mutate or remove data
+ * irreversibly.
  */
 
 "use client"
 
-import {
-  FileText,
-  FilePlus2,
-  FileMinus2,
-  Pencil,
-  FolderTree,
-  Save,
-  Terminal,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react"
+import * as LucideIcons from "lucide-react"
+import { Wrench, type LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import {
   ToolOutputStream,
   type ToolStreamLine,
 } from "@/components/ai-elements/tool-output-stream"
+import {
+  getToolMeta,
+  isDestructiveTool,
+  type ToolCategory,
+} from "@/lib/agents/tool-meta"
 
 export type ToolStatus = "running" | "completed" | "error"
 
@@ -42,14 +44,16 @@ export interface ToolCallCardProps {
   }
 }
 
-const TOOL_META: Record<string, { icon: LucideIcon; verb: string }> = {
-  read_file: { icon: FileText, verb: "Read" },
-  write_file: { icon: Save, verb: "Write" },
-  edit_file: { icon: Pencil, verb: "Edit" },
-  create_file: { icon: FilePlus2, verb: "Create" },
-  delete_file: { icon: FileMinus2, verb: "Delete" },
-  list_files: { icon: FolderTree, verb: "List" },
-  run_command: { icon: Terminal, verb: "Run" },
+/**
+ * Left-border accent color for each tool category. Pulls from semantic
+ * tokens so dark/light themes both look right.
+ */
+const CATEGORY_BORDER: Record<ToolCategory, string> = {
+  read: "border-l-info-foreground/60",
+  write: "border-l-warning/60",
+  execute: "border-l-primary/60",
+  search: "border-l-muted-foreground/60",
+  system: "border-l-border",
 }
 
 const STATUS_CHIP: Record<ToolStatus, { label: string; className: string }> = {
@@ -75,10 +79,47 @@ function getArg(args: unknown, key: string): string | undefined {
   return undefined
 }
 
+/**
+ * Resolves a Lucide icon name (e.g. "FileText") to its component, falling
+ * back to a generic Wrench icon if the name doesn't match.
+ */
+function resolveIcon(name: string): LucideIcon {
+  const lookup = (LucideIcons as unknown as Record<string, unknown>)[name]
+  if (typeof lookup === "function" || typeof lookup === "object") {
+    return lookup as LucideIcon
+  }
+  return Wrench
+}
+
+/**
+ * Builds the active label shown while a tool is running. We turn the verb
+ * into a present-progressive form for the small set we know about; for
+ * others we just append an ellipsis.
+ */
+function activeLabelFor(verb: string): string {
+  const map: Record<string, string> = {
+    Read: "Reading",
+    Write: "Writing",
+    Edit: "Editing",
+    "Multi-edit": "Editing",
+    Create: "Creating",
+    Delete: "Deleting",
+    List: "Listing",
+    Run: "Running",
+    Search: "Searching",
+    Errors: "Reading errors",
+    Status: "Updating status",
+    Tool: "Running",
+  }
+  return `${map[verb] ?? verb}…`
+}
+
 export function ToolCallCard({ toolCall }: ToolCallCardProps) {
-  const meta = TOOL_META[toolCall.name] ?? { icon: Wrench, verb: "Tool" }
-  const Icon = meta.icon
+  const meta = getToolMeta(toolCall.name)
+  const Icon = resolveIcon(meta.iconName)
   const chip = STATUS_CHIP[toolCall.status]
+  const destructive = isDestructiveTool(toolCall.name)
+  const borderClass = CATEGORY_BORDER[meta.category]
 
   const path = getArg(toolCall.args, "path")
   const command = getArg(toolCall.args, "command")
@@ -102,14 +143,21 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const errorMessage =
     result && "ok" in result && !result.ok ? result.error : undefined
 
+  const verbLabel =
+    toolCall.status === "running" ? activeLabelFor(meta.verb) : meta.verb
+
   return (
     <div
       className={cn(
         "rounded-lg bg-surface-3 px-3 py-2.5",
+        "border-l-2",
+        borderClass,
         "flex flex-col gap-2",
         "animate-chat-enter",
       )}
       data-testid="tool-call-card"
+      data-tool-category={meta.category}
+      data-tool-risk={meta.risk}
     >
       <div className="flex items-center gap-2">
         <Icon
@@ -118,8 +166,16 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
           aria-hidden="true"
         />
         <span className="text-xs font-medium text-foreground">
-          {meta.verb}
+          {verbLabel}
         </span>
+        {destructive && (
+          <span
+            data-testid="tool-destructive-flag"
+            title="Destructive tool"
+            aria-label="Destructive tool"
+            className="inline-block w-1.5 h-1.5 rounded-full bg-destructive shrink-0"
+          />
+        )}
         <span className="text-[11px] font-mono text-muted-foreground/70 truncate">
           {toolCall.name}
         </span>
