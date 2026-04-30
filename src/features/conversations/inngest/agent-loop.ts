@@ -25,7 +25,6 @@ import { NonRetriableError } from "inngest"
 import { inngest } from "@/inngest/client"
 import {
   AgentRunner,
-  runBudget,
   runBudgetForTask,
   type RunBudget,
 } from "@/lib/agents/agent-runner"
@@ -134,7 +133,6 @@ export const agentLoop = inngest.createFunction(
       userId: data.userId,
     })
     const plan = (customer?.plan ?? "free") as "free" | "pro" | "team"
-    const baseBudget = runBudget(plan)
 
     // Constitution §17 — pre-loop quota check. NonRetriableError so Inngest
     // doesn't burn retries on a quota wall.
@@ -270,7 +268,6 @@ export const agentLoop = inngest.createFunction(
       }
     })()
 
-    const budget = runBudgetForTask(plan, taskClass)
     const adapter = new ClaudeAdapter({
       apiKey: process.env.ANTHROPIC_API_KEY ?? "",
       model: modelId,
@@ -355,10 +352,11 @@ export const agentLoop = inngest.createFunction(
       overrides: clampedOverrides,
     })
 
-    // Apply budget overrides on top of the plan-derived base budget.
+    // Apply budget overrides on top of the task-classified budget (D-041 multipliers
+    // are applied first via runBudgetForTask; user preference overrides layer on top).
     const budget: RunBudget = (() => {
       const overrides = runtimeConfig.budgetOverrides ?? {}
-      const next: RunBudget = { ...baseBudget }
+      const next: RunBudget = { ...runBudgetForTask(plan, taskClass) }
       const maxIterations = overrides["budget.maxIterations"]
       const maxTokens = overrides["budget.maxTokens"]
       const maxDurationMs = overrides["budget.maxDurationMs"]
