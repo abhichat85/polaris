@@ -137,3 +137,107 @@ export const isCancelled = query({
     return message?.status === "cancelled"
   },
 })
+
+// ── Phase 1/2/3 — quality / stream / HITL signal mutations ──────────────────
+
+/**
+ * Phase 2 — append a StreamMonitor alert onto the assistant message.
+ * The runner forwards each alert exactly once (per-pattern de-dupe lives in
+ * the StreamMonitor itself), so this mutation simply pushes.
+ */
+export const appendStreamAlertInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    messageId: v.id("messages"),
+    alert: v.object({
+      type: v.string(),
+      message: v.string(),
+      charOffset: v.number(),
+      timestamp: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey)
+    const message = await ctx.db.get(args.messageId)
+    if (!message) throw new Error("Message not found")
+    const existing = message.streamAlerts ?? []
+    await ctx.db.patch(args.messageId, {
+      streamAlerts: [...existing, args.alert],
+    })
+  },
+})
+
+/**
+ * Phase 1 — record contract evaluation quality score + verdict on the
+ * assistant message. The full structured score is collapsed onto the two
+ * `qualityScore` / `qualityVerdict` fields the chat UI renders; the
+ * detailed `issues` array is kept on the per-run telemetry record (see
+ * `contract_results` / `harness_telemetry`).
+ */
+export const appendQualityScoreInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    messageId: v.id("messages"),
+    score: v.object({
+      contractType: v.string(),
+      passed: v.boolean(),
+      score: v.number(),
+      issues: v.array(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey)
+    const message = await ctx.db.get(args.messageId)
+    if (!message) throw new Error("Message not found")
+    await ctx.db.patch(args.messageId, {
+      qualityScore: args.score.score,
+      qualityVerdict: args.score.passed ? "PASS" : "RETURN-FOR-FIX",
+    })
+  },
+})
+
+/**
+ * Phase 1 — record a healing-loop iteration for the run that produced
+ * this message. Called by the healing loop after each attempt; the
+ * iteration's `attempt` number is persisted as `healingAttempts` on the
+ * message so the chat UI can render the live "healing… attempt N/M" badge.
+ */
+export const appendHealingIterationInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    messageId: v.id("messages"),
+    iteration: v.object({
+      attempt: v.number(),
+      maxAttempts: v.number(),
+      previousScore: v.optional(v.number()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey)
+    const message = await ctx.db.get(args.messageId)
+    if (!message) throw new Error("Message not found")
+    await ctx.db.patch(args.messageId, {
+      healingAttempts: args.iteration.attempt,
+    })
+  },
+})
+
+/**
+ * Phase 3 — link a pending HITL checkpoint to this message so the chat UI
+ * can render the approval prompt inline.
+ */
+export const recordHitlPendingInternal = mutation({
+  args: {
+    internalKey: v.string(),
+    messageId: v.id("messages"),
+    hitlCheckpointId: v.id("hitl_checkpoints"),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey)
+    const message = await ctx.db.get(args.messageId)
+    if (!message) throw new Error("Message not found")
+    await ctx.db.patch(args.messageId, {
+      hitlPendingId: args.hitlCheckpointId,
+    })
+  },
+})

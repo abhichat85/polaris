@@ -265,6 +265,27 @@ export default defineSchema({
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
     modelKey: v.optional(v.string()),
+
+    // ── Phase 1/2/3 — quality + stream-monitor + HITL signals (per-message) ─
+    /** StreamMonitor alerts fired while streaming this assistant message. */
+    streamAlerts: v.optional(
+      v.array(
+        v.object({
+          type: v.string(),
+          message: v.string(),
+          charOffset: v.number(),
+          timestamp: v.number(),
+        }),
+      ),
+    ),
+    /** Healing iteration count for the run that produced this message. */
+    healingAttempts: v.optional(v.number()),
+    /** Contract / quality score (0-1) for this message. */
+    qualityScore: v.optional(v.number()),
+    /** Contract verdict ("PASS" | "RETURN-FOR-FIX" | "FAIL" | etc.). */
+    qualityVerdict: v.optional(v.string()),
+    /** Pending HITL checkpoint linked to this message, if any. */
+    hitlPendingId: v.optional(v.id("hitl_checkpoints")),
   })
     .index("by_conversation", ["conversationId"])
     .index("by_project_status", ["projectId", "status"]),
@@ -641,6 +662,267 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_user", ["userId"])
     .index("by_user_workspace", ["userId", "workspaceId"]),
+
+  // ── HITL checkpoints (human-in-the-loop) ──────────────────────────────────
+  /**
+   * Approval gates for destructive / sensitive agent actions. The agent
+   * runner inserts a PENDING row; the UI resolves it to APPROVED /
+   * REJECTED / MODIFIED. Authority: HITL sub-plan.
+   */
+  hitl_checkpoints: defineTable({
+    /** messageId of the agent run that triggered the checkpoint. */
+    runId: v.string(),
+    projectId: v.id("projects"),
+    /** PENDING | APPROVED | REJECTED | MODIFIED | EXPIRED | TIMED_OUT */
+    status: v.string(),
+    /** destructive-tool | sensitive-path | scope-creep | manual */
+    triggerType: v.string(),
+    /** Human-readable explanation of why the checkpoint fired. */
+    triggerReason: v.string(),
+    /** Tool that triggered the checkpoint (if applicable). */
+    toolName: v.optional(v.string()),
+    /** File/directory path involved (if applicable). */
+    path: v.optional(v.string()),
+    /** Description of the action the agent wants to perform. */
+    proposedAction: v.string(),
+    /** User's modification text (set on MODIFIED resolution). */
+    modification: v.optional(v.string()),
+    /** How long (ms) the checkpoint waits before timing out. */
+    timeoutMs: v.number(),
+    /** ms-since-epoch when the checkpoint was resolved. */
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_runId", ["runId"])
+    .index("by_status", ["runId", "status"]),
+
+  // ── Phase 1 — Contract results (post-loop quality eval) ─────────────────
+  /**
+   * Per-run quality evaluation produced by `Contract.evaluate()` after the
+   * agent loop completes. One row per `agent/run` (or per healing attempt
+   * when the loop runs the contract multiple times).
+   */
+  contract_results: defineTable({
+    messageId: v.id("messages"),
+    conversationId: v.id("conversations"),
+    projectId: v.id("projects"),
+    /** Contract id, e.g. "code-change", "read-only-qa", "scaffold". */
+    contractType: v.string(),
+    /** True iff every hard constraint passed. */
+    passed: v.boolean(),
+    /** Overall score 0-1. */
+    score: v.number(),
+    /** Per-constraint pass/fail with optional detail. */
+    constraintResults: v.array(
+      v.object({
+        constraintId: v.string(),
+        passed: v.boolean(),
+        detail: v.optional(v.string()),
+      }),
+    ),
+    /** Human-readable issues for the healing prompt. */
+    issues: v.array(v.string()),
+    /**
+     * Healing attempt index this result belongs to. 0 = first run,
+     * 1 = first heal, etc.
+     */
+    attemptIndex: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_message", ["messageId"])
+    .index("by_project", ["projectId"]),
+
+  // ── Phase 2 — Harness telemetry ──────────────────────────────────────────
+  /**
+   * Canonical per-run telemetry record. One row per `agent/run`. Folds in
+   * pre-flight (classification), in-flight (tool calls, alerts, steering),
+   * and post-flight (contract verdict, healing rounds) signals.
+   */
+  harness_telemetry: defineTable({
+    messageId: v.id("messages"),
+    conversationId: v.id("conversations"),
+    projectId: v.id("projects"),
+    userId: v.string(),
+    /** Provider key — "claude" | "openai" | "gemini". */
+    provider: v.string(),
+    /** Model id used for the run. */
+    model: v.string(),
+    /** Inngest attempt number — 0 on first dispatch. */
+    attempt: v.number(),
+    /** Contract id selected pre-flight. */
+    contractType: v.optional(v.string()),
+    /** Contract pass/fail. */
+    contractPassed: v.optional(v.boolean()),
+    /** Contract score 0-1. */
+    contractScore: v.optional(v.number()),
+    /** Evaluator verdict (sprint-level eval): "PASS" | "RETURN-FOR-FIX". */
+    evaluatorVerdict: v.optional(v.string()),
+    /** Iteration count + token totals from the run. */
+    iterations: v.number(),
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    durationMs: v.number(),
+    /** StreamMonitor alerts fired during the run. */
+    streamAlerts: v.array(
+      v.object({
+        type: v.string(),
+        message: v.string(),
+        charOffset: v.number(),
+        timestamp: v.number(),
+      }),
+    ),
+    /** Steering messages injected mid-run. */
+    steeringInjected: v.number(),
+    /** Healing attempts performed (0 if no healing). */
+    healingAttempts: v.number(),
+    /** HITL checkpoints fired in the run. */
+    hitlCheckpoints: v.number(),
+    /** Task class chosen pre-flight (D-041). */
+    taskClass: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_message", ["messageId"])
+    .index("by_user", ["userId", "createdAt"])
+    .index("by_project", ["projectId", "createdAt"]),
+
+  // ── Phase 5 — Response feedback (thumbs) ─────────────────────────────────
+  /**
+   * Per-message user feedback (thumbs up/down + optional comment). Drives
+   * the Calibrator's quality multiplier in Phase 5.
+   */
+  response_feedback: defineTable({
+    messageId: v.id("messages"),
+    conversationId: v.id("conversations"),
+    userId: v.string(),
+    /** "up" | "down". */
+    rating: v.union(v.literal("up"), v.literal("down")),
+    /** Optional free-form comment from the user. */
+    comment: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_message", ["messageId"])
+    .index("by_user", ["userId", "createdAt"]),
+
+  // ── Phase 5 — Learned preferences (mined nightly) ────────────────────────
+  /**
+   * User-scoped learned preferences. Populated by a nightly Inngest job
+   * that mines `response_feedback` + edit history. Read-only at runtime
+   * by the PreferenceInjector.
+   */
+  learned_preferences: defineTable({
+    userId: v.string(),
+    /** Preference key — e.g. "verbosity", "code-style.paradigm". */
+    key: v.string(),
+    /** Inferred value. */
+    value: v.any(),
+    /** Confidence 0-1 — N runs of consistent signal scaled. */
+    confidence: v.number(),
+    /** Number of runs the inference was based on. */
+    sampleSize: v.number(),
+    /** Last time this preference was refreshed. */
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_key", ["userId", "key"]),
+
+  // ── Phase 5 — Agent UserProfile (NOT the onboarding `user_profiles`) ─────
+  /**
+   * Per-user agent preferences and adaptation signals (replaces Praxiom's
+   * WorkspaceProfile). Distinct from `user_profiles` (onboarding state).
+   */
+  agent_user_profiles: defineTable({
+    userId: v.string(),
+    /** "minimal" | "normal" | "detailed". */
+    verbosity: v.string(),
+    codeStyle: v.object({
+      paradigm: v.union(v.literal("functional"), v.literal("oop"), v.null()),
+      exportStyle: v.union(v.literal("named"), v.literal("default"), v.null()),
+      typeStyle: v.union(v.literal("inline"), v.literal("separate"), v.null()),
+      maxLineLength: v.union(v.number(), v.null()),
+    }),
+    /** Pre-clamp override bag. Values are dot-paths from OverrideClamps. */
+    overrides: v.any(),
+    /** Aggregated run stats for the Calibrator. */
+    runStats: v.object({
+      totalRuns: v.number(),
+      successfulRuns: v.number(),
+      averageIterations: v.number(),
+      averageTokens: v.number(),
+      averageDurationMs: v.number(),
+      taskClassDistribution: v.any(),
+      averageEvalScore: v.union(v.number(), v.null()),
+    }),
+    /** Free-form notes the user has asked the agent to remember. */
+    persistentNotes: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // ── Phase 6 — Prompt enrichment (intent-alignment loop) ─────────────────
+  /**
+   * Per-conversation enrichment session. Created when the user sends their
+   * first message on a new project; the LLM scores completeness and drives
+   * a multi-round Q&A to sharpen the prompt before `plan/run` fires.
+   *
+   * State machine: scoring → collecting → (back to scoring after answers) →
+   * ready (score ≥ threshold or max rounds) | skipped (user opted out).
+   */
+  prompt_enrichment_sessions: defineTable({
+    conversationId: v.id("conversations"),
+    projectId: v.id("projects"),
+    userId: v.string(),
+    /** The original unmodified user prompt. */
+    rawPrompt: v.string(),
+    /**
+     * Ordered Q&A rounds. A round is "pending answer" when `answers` is
+     * absent; "answered" once the user submits. `scoreAfter` is written
+     * by the scorer after it processes the answers.
+     */
+    rounds: v.array(
+      v.object({
+        questions: v.array(
+          v.object({
+            id: v.string(),
+            text: v.string(),
+            type: v.union(
+              v.literal("radio"),
+              v.literal("multiselect"),
+              v.literal("freetext"),
+            ),
+            options: v.optional(v.array(v.string())),
+            dimensionId: v.optional(v.string()),
+          }),
+        ),
+        answers: v.optional(
+          v.array(
+            v.object({
+              questionId: v.string(),
+              answer: v.string(),
+            }),
+          ),
+        ),
+        /** Score re-computed after incorporating this round's answers. */
+        scoreAfter: v.optional(v.number()),
+      }),
+    ),
+    /** Latest completeness score 0–1. */
+    currentScore: v.number(),
+    /** "scoring" | "collecting" | "ready" | "skipped" */
+    status: v.union(
+      v.literal("scoring"),
+      v.literal("collecting"),
+      v.literal("ready"),
+      v.literal("skipped"),
+    ),
+    /**
+     * Compiled task brief (raw prompt + all Q&A answers).
+     * Set when status transitions to "ready" or "skipped".
+     */
+    enrichedPrompt: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_project", ["projectId"]),
 
   // ── Sub-plan 07 (deploy pipeline) ────────────────────────────────────────
   deployments: defineTable({
