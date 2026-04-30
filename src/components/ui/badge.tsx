@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
  * with the matching foreground hue. `destructive` uses `text-destructive-foreground`.
  */
 const badgeVariants = cva(
-  "inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-colors overflow-hidden",
+  "inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-colors overflow-hidden",
   {
     variants: {
       variant: {
@@ -24,7 +24,7 @@ const badgeVariants = cva(
           "bg-transparent text-foreground [a&]:hover:bg-surface-3",
         // Praxiom semantic chips — low-opacity tinted backgrounds
         active:
-          "bg-primary/10 text-primary",
+          "bg-primary/15 text-primary",
         success:
           "bg-success/15 text-success",
         warning:
