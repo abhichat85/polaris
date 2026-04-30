@@ -93,4 +93,51 @@ export interface AgentSink {
    * Optional — sinks that don't care return undefined / no-op.
    */
   pullPendingSteer?(messageId: string): Promise<string | null>
+
+  /**
+   * Phase 2 — record a StreamMonitor alert for this message. The runner
+   * forwards each newly-fired alert exactly once (deduped by `alert.type`).
+   * Optional: sinks that don't care can leave it undefined (the runner
+   * feature-detects).
+   */
+  appendStreamAlert?(
+    messageId: string,
+    alert: {
+      type: string
+      message: string
+      charOffset: number
+      timestamp: number
+    },
+  ): Promise<void>
+
+  /**
+   * Phase 1 — record a contract-evaluation quality score against the
+   * current run. Fired from agent-loop after the evaluator runs (NOT from
+   * the runner). Optional — sinks that don't care can leave undefined.
+   */
+  appendQualityScore?(
+    messageId: string,
+    score: {
+      contractType: string
+      passed: boolean
+      score: number
+      issues: string[]
+    },
+  ): Promise<void>
+
+  /**
+   * Phase 1 — record a healing-loop iteration. Fired from agent-loop when
+   * the healing loop spins up another attempt. Optional.
+   */
+  appendHealingIteration?(
+    messageId: string,
+    iteration: {
+      attempt: number
+      maxAttempts: number
+      previousScore?: number
+    },
+  ): Promise<void>
+
+  /** Phase 3 — link a pending HITL checkpoint to this message. Optional. */
+  recordHitlPending?(messageId: string, hitlCheckpointId: string): Promise<void>
 }

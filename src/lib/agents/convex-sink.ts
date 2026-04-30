@@ -168,6 +168,78 @@ export class ConvexAgentSink implements AgentSink {
       messageId: messageId as Id<"messages">,
     })
   }
+
+  // ── Phase 1/2/3 — quality / stream / HITL signal sinks ────────────────────
+
+  async appendStreamAlert(
+    messageId: string,
+    alert: {
+      type: string
+      message: string
+      charOffset: number
+      timestamp: number
+    },
+  ): Promise<void> {
+    await this.deps.convex.mutation(
+      api.agent_messages.appendStreamAlertInternal,
+      {
+        internalKey: this.deps.internalKey,
+        messageId: messageId as Id<"messages">,
+        alert,
+      },
+    )
+  }
+
+  async appendQualityScore(
+    messageId: string,
+    score: {
+      contractType: string
+      passed: boolean
+      score: number
+      issues: string[]
+    },
+  ): Promise<void> {
+    await this.deps.convex.mutation(
+      api.agent_messages.appendQualityScoreInternal,
+      {
+        internalKey: this.deps.internalKey,
+        messageId: messageId as Id<"messages">,
+        score,
+      },
+    )
+  }
+
+  async appendHealingIteration(
+    messageId: string,
+    iteration: {
+      attempt: number
+      maxAttempts: number
+      previousScore?: number
+    },
+  ): Promise<void> {
+    await this.deps.convex.mutation(
+      api.agent_messages.appendHealingIterationInternal,
+      {
+        internalKey: this.deps.internalKey,
+        messageId: messageId as Id<"messages">,
+        iteration,
+      },
+    )
+  }
+
+  async recordHitlPending(
+    messageId: string,
+    hitlCheckpointId: string,
+  ): Promise<void> {
+    await this.deps.convex.mutation(
+      api.agent_messages.recordHitlPendingInternal,
+      {
+        internalKey: this.deps.internalKey,
+        messageId: messageId as Id<"messages">,
+        hitlCheckpointId: hitlCheckpointId as Id<"hitl_checkpoints">,
+      },
+    )
+  }
 }
 
 // (Translation helpers extracted to checkpoint-codec.ts so they're unit-testable

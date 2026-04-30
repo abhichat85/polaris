@@ -30,6 +30,38 @@ export class InMemoryAgentSink implements AgentSink {
   /** Pre-seeded checkpoint for resume tests. */
   preloadedCheckpoint: AgentCheckpoint | null = null
 
+  // ── Phase 1/2/3 signal capture ─────────────────────────────────────────────
+  streamAlerts: Array<{
+    messageId: string
+    alert: {
+      type: string
+      message: string
+      charOffset: number
+      timestamp: number
+    }
+  }> = []
+  qualityScores: Array<{
+    messageId: string
+    score: {
+      contractType: string
+      passed: boolean
+      score: number
+      issues: string[]
+    }
+  }> = []
+  healingIterations: Array<{
+    messageId: string
+    iteration: {
+      attempt: number
+      maxAttempts: number
+      previousScore?: number
+    }
+  }> = []
+  hitlPendingRecords: Array<{
+    messageId: string
+    hitlCheckpointId: string
+  }> = []
+
   async loadInitialMessages(_conversationId: string): Promise<ConversationMessage[]> {
     return [...this.initialMessages]
   }
@@ -68,6 +100,48 @@ export class InMemoryAgentSink implements AgentSink {
 
   async isCancelled(messageId: string): Promise<boolean> {
     return this.cancelledMessageIds.has(messageId)
+  }
+
+  async appendStreamAlert(
+    messageId: string,
+    alert: {
+      type: string
+      message: string
+      charOffset: number
+      timestamp: number
+    },
+  ): Promise<void> {
+    this.streamAlerts.push({ messageId, alert })
+  }
+
+  async appendQualityScore(
+    messageId: string,
+    score: {
+      contractType: string
+      passed: boolean
+      score: number
+      issues: string[]
+    },
+  ): Promise<void> {
+    this.qualityScores.push({ messageId, score })
+  }
+
+  async appendHealingIteration(
+    messageId: string,
+    iteration: {
+      attempt: number
+      maxAttempts: number
+      previousScore?: number
+    },
+  ): Promise<void> {
+    this.healingIterations.push({ messageId, iteration })
+  }
+
+  async recordHitlPending(
+    messageId: string,
+    hitlCheckpointId: string,
+  ): Promise<void> {
+    this.hitlPendingRecords.push({ messageId, hitlCheckpointId })
   }
 
   // ── test helpers ───────────────────────────────────────────────────────────

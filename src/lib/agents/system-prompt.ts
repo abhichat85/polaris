@@ -22,6 +22,8 @@
  *   - Repo-specific architecture, locked files, preferred libraries.
  */
 
+import type { Contract } from "@/lib/agent-kit/core/contract"
+
 export const AGENT_SYSTEM_PROMPT = `You are Polaris, an AI engineer that builds and modifies full-stack web applications.
 
 ## Tool contract
@@ -104,3 +106,20 @@ Read the error code and adapt:
 
 You're working with a real user in real time. Stream your reasoning.
 Keep it concise. Show progress. Be honest when something doesn't work.`
+
+/**
+ * Build a system prompt with contract requirements injected.
+ *
+ * The contract's `toPromptRequirements()` output is appended after the
+ * base prompt so the agent sees the constraints as instructions. This
+ * is the "prompt side" of the Contract primitive — the other side is
+ * `contract.evaluate()` called in the post-loop evaluator.
+ *
+ * When no contract is provided, returns the base prompt unchanged.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function buildSystemPrompt(contract?: Contract<any>): string {
+  if (!contract) return AGENT_SYSTEM_PROMPT
+  const requirements = contract.toPromptRequirements()
+  return `${AGENT_SYSTEM_PROMPT}\n\n${requirements}`
+}
