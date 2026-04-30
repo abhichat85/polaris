@@ -3,16 +3,20 @@
  *
  * Triggered when the Generator finishes a sprint (all features in that
  * sprint are marked `done`). Runs the Evaluator agent and persists the
- * verdict + scores to convex/specs. If verdict is RETURN-FOR-FIX, fires
- * a follow-up `agent/run` event with the eval issues prepended to the
- * conversation so the Generator addresses them.
+ * verdict + scores to convex/specs. If verdict is RETURN-FOR-FIX, uses
+ * the score-aware healing loop (shouldRetry + buildHealingPrompt) to
+ * decide whether to dispatch a fix round with a surgical healing prompt.
  *
  * Tier-gated: free tier skips the Evaluator entirely (no event emitted).
  * Pro/Team gets it. Plan check happens at the call site that emits the
  * `eval/run` event, not inside this function.
  *
- * Hard cap: max 3 eval rounds per sprint. After that, surface to user
- * for manual review.
+ * Healing loop (replaces the old simple round-count cap):
+ *   - Normalizes evaluator scores (0-5) to 0-1 scale
+ *   - Applies 5-rule retry ladder: good-enough, marginal-gap, hopeless,
+ *     max-attempts, same-issues
+ *   - Builds surgical healing prompts that list ONLY failing constraints
+ *   - Tracks healing history for telemetry
  */
 
 import { ConvexHttpClient } from "convex/browser"
@@ -20,8 +24,14 @@ import { NonRetriableError } from "inngest"
 
 import { inngest } from "@/inngest/client"
 import { Evaluator } from "@/lib/agents/evaluator"
+import type { EvalScores } from "@/lib/agents/evaluator"
 import { runLints } from "@/lib/scaffold/lints/types"
 import { nextJsLints } from "@/lib/scaffold/lints/nextjs"
+import {
+  shouldRetry,
+  buildHealingPrompt,
+  type HealingContext,
+} from "@/lib/agent-kit/core/healing"
 
 import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
@@ -33,9 +43,35 @@ interface EvalRunEvent {
   /** How many eval rounds have already happened for this sprint (0 → first run). */
   roundIndex: number
   userId: string
+  /** Score from the previous eval round (for healing loop delta tracking). */
+  previousScore?: number
+  /** Issues from the previous eval round (for same-issues detection). */
+  previousIssues?: string[]
 }
 
-const MAX_EVAL_ROUNDS_PER_SPRINT = 3
+/**
+ * Healing loop configuration. These are the retry policy thresholds.
+ * Max attempts serves as the hard cap (replaces MAX_EVAL_ROUNDS_PER_SPRINT).
+ */
+const HEALING_CONFIG = {
+  goodEnoughThreshold: 0.85, // normalized: 4.25/5
+  minImprovement: 0.05,      // normalized: 0.25/5 improvement needed
+  hopelessThreshold: 0.2,    // normalized: 1/5
+  maxAttempts: 3,
+}
+
+/**
+ * Normalize evaluator scores (0-5 per dimension) to a single 0-1 score.
+ * Weighted average: functionality=40%, buildHealth=30%, codeQuality=20%, design=10%.
+ */
+function normalizeScores(scores: EvalScores): number {
+  const weighted =
+    scores.functionality * 0.4 +
+    scores.buildHealth * 0.3 +
+    scores.codeQuality * 0.2 +
+    scores.design * 0.1
+  return weighted / 5 // normalize from 0-5 to 0-1
+}
 
 export const evalRun = inngest.createFunction(
   {
@@ -56,11 +92,12 @@ export const evalRun = inngest.createFunction(
       throw new NonRetriableError("eval/run event missing required fields")
     }
 
-    if (data.roundIndex >= MAX_EVAL_ROUNDS_PER_SPRINT) {
-      // Don't loop forever; flag for human.
+    // Hard cap check (rule 4 of the healing loop) — checked eagerly so
+    // we don't waste an Evaluator call on a round we won't act on.
+    if (data.roundIndex >= HEALING_CONFIG.maxAttempts) {
       return {
         verdict: "ESCALATE_TO_HUMAN",
-        reason: `Sprint ${data.sprint} hit the ${MAX_EVAL_ROUNDS_PER_SPRINT}-round eval cap.`,
+        reason: `Sprint ${data.sprint} hit the ${HEALING_CONFIG.maxAttempts}-round healing cap.`,
       }
     }
 
@@ -127,7 +164,6 @@ export const evalRun = inngest.createFunction(
         `Design: ${report.scores.design}/5 — ${report.rationale.design}\n` +
         `Build health: ${report.scores.buildHealth}/5 — ${report.rationale.buildHealth}\n\n` +
         `${report.summary}`
-      // Use the standard createMessage path — there's no special "evaluator" role.
       const conv = await convex.query(api.system.getConversationById, {
         internalKey,
         conversationId: data.conversationId as Id<"conversations">,
@@ -144,22 +180,64 @@ export const evalRun = inngest.createFunction(
       }
     })
 
-    // Step 4 — RETURN-FOR-FIX → re-fire agent/run with the issues.
+    // Step 4 — Score-aware healing loop decision.
+    // Instead of a simple "RETURN-FOR-FIX → always retry up to N",
+    // use the 5-rule retry ladder to decide.
     if (report.verdict === "RETURN-FOR-FIX" && report.issues.length > 0) {
-      await step.run("dispatch-fix-round", async () => {
-        await inngest.send({
-          name: "agent/run",
-          data: {
-            messageId: `eval_round_${data.roundIndex + 1}_${data.sprint}`,
-            conversationId: data.conversationId,
-            projectId: data.projectId,
-            userId: data.userId,
-            evalIssues: report.issues,
-            sprint: data.sprint,
-            evalRoundIndex: data.roundIndex + 1,
-          },
+      const currentScore = normalizeScores(report.scores)
+      const healingCtx: HealingContext = {
+        attempt: data.roundIndex,
+        currentScore,
+        previousScore: data.previousScore ?? null,
+        currentIssues: report.issues,
+        previousIssues: data.previousIssues ?? null,
+      }
+
+      const decision = shouldRetry(healingCtx, HEALING_CONFIG)
+
+      if (decision.retry) {
+        // Build a surgical healing prompt instead of just prepending raw issues
+        const healingPrompt = buildHealingPrompt(
+          report.issues,
+          data.roundIndex,
+          HEALING_CONFIG.maxAttempts,
+        )
+
+        await step.run("dispatch-fix-round", async () => {
+          await inngest.send({
+            name: "agent/run",
+            data: {
+              messageId: `eval_round_${data.roundIndex + 1}_${data.sprint}`,
+              conversationId: data.conversationId,
+              projectId: data.projectId,
+              userId: data.userId,
+              evalIssues: report.issues,
+              healingPrompt, // surgical healing prompt for the agent
+              sprint: data.sprint,
+              evalRoundIndex: data.roundIndex + 1,
+              // Pass score/issues forward for the next round's delta tracking
+              previousScore: currentScore,
+              previousIssues: report.issues,
+            },
+          })
         })
-      })
+
+        return {
+          verdict: report.verdict,
+          scores: report.scores,
+          healingDecision: "retry",
+          normalizedScore: currentScore,
+        }
+      }
+
+      // Decision was to NOT retry — surface the reason
+      return {
+        verdict: report.verdict,
+        scores: report.scores,
+        healingDecision: "stop",
+        stopReason: decision.reason,
+        normalizedScore: currentScore,
+      }
     }
 
     return { verdict: report.verdict, scores: report.scores }

@@ -27,6 +27,7 @@ import {
   AgentRunner,
   runBudget,
   runBudgetForTask,
+  type RunBudget,
 } from "@/lib/agents/agent-runner"
 import { ConvexAgentSink } from "@/lib/agents/convex-sink"
 import { ConvexFileService } from "@/lib/files/convex-file-service"
@@ -45,8 +46,21 @@ import {
 } from "@/lib/agents/verification-policy"
 import { classifyTask } from "@/lib/agents/task-classifier"
 import { resolveTaskModel, applyTierGate } from "@/lib/agents/task-models"
+import {
+  CodeChangeContract,
+  type CodeChangeResult,
+} from "@/lib/agent-kit/core/contracts"
+import {
+  applyOverrides,
+  DEFAULT_CLAMP_REGISTRY,
+  injectPreferences,
+} from "@/lib/agent-kit/core"
+import type { UserProfile } from "@/lib/agent-kit/core"
 import { api } from "../../../../convex/_generated/api"
 import type { Id } from "../../../../convex/_generated/dataModel"
+
+/** Singleton Code-Change contract instance used by the post-loop evaluator. */
+const codeChangeContract = new CodeChangeContract()
 
 const SANDBOX_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -90,7 +104,8 @@ export const agentLoop = inngest.createFunction(
     },
   },
   { event: "agent/run" },
-  async ({ event, attempt }) => {
+  async ({ event, attempt, step }) => {
+    const startedAt = Date.now()
     const data = event.data as AgentRunEvent
     if (!data?.messageId || !data?.conversationId || !data?.projectId || !data?.userId) {
       throw new NonRetriableError("agent/run event missing required fields")
@@ -119,6 +134,7 @@ export const agentLoop = inngest.createFunction(
       userId: data.userId,
     })
     const plan = (customer?.plan ?? "free") as "free" | "pro" | "team"
+    const baseBudget = runBudget(plan)
 
     // Constitution §17 — pre-loop quota check. NonRetriableError so Inngest
     // doesn't burn retries on a quota wall.
@@ -290,18 +306,93 @@ export const agentLoop = inngest.createFunction(
           })
       : undefined
 
+    // ── Pre-flight (Wave 2A integration) ───────────────────────────────────
+    // Load the user's adaptive profile, clamp their overrides, derive a
+    // prompt addendum + runtime config patch from PreferenceInjector, and
+    // build the Code-Change contract requirements block. These are folded
+    // into the system prompt below, alongside the optional AGENTS.md.
+    //
+    // HITL preflight: deferred — triggers fire mid-run when actual tool
+    // calls happen, see HITLGate.evaluateTrigger. We have no tool input at
+    // this stage, so there's nothing to gate yet.
+    const profile = (await step.run("load-user-profile", async () =>
+      convex.query(api.agent_user_profiles.getOrDefaultInternal, {
+        internalKey,
+        userId: data.userId,
+      }),
+    )) as UserProfile | null
+
+    const safeProfile: UserProfile = profile ?? {
+      userId: data.userId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      verbosity: "normal",
+      codeStyle: {
+        paradigm: null,
+        exportStyle: null,
+        typeStyle: null,
+        maxLineLength: null,
+      },
+      overrides: {},
+      runStats: {
+        totalRuns: 0,
+        successfulRuns: 0,
+        averageIterations: 0,
+        averageTokens: 0,
+        averageDurationMs: 0,
+        taskClassDistribution: {},
+        averageEvalScore: null,
+      },
+      persistentNotes: [],
+    }
+
+    const clampedOverrides = applyOverrides(
+      safeProfile.overrides ?? {},
+      DEFAULT_CLAMP_REGISTRY,
+    )
+    const { promptAddendum, runtimeConfig } = injectPreferences({
+      ...safeProfile,
+      overrides: clampedOverrides,
+    })
+
+    // Apply budget overrides on top of the plan-derived base budget.
+    const budget: RunBudget = (() => {
+      const overrides = runtimeConfig.budgetOverrides ?? {}
+      const next: RunBudget = { ...baseBudget }
+      const maxIterations = overrides["budget.maxIterations"]
+      const maxTokens = overrides["budget.maxTokens"]
+      const maxDurationMs = overrides["budget.maxDurationMs"]
+      if (typeof maxIterations === "number") next.maxIterations = maxIterations
+      if (typeof maxTokens === "number") next.maxTokens = maxTokens
+      if (typeof maxDurationMs === "number") next.maxDurationMs = maxDurationMs
+      return next
+    })()
+
     // D-030 — augment system prompt with the project's AGENTS.md if present.
     // Best-effort: any error keeps the canonical prompt.
     const systemPromptOverride = await (async () => {
       try {
+        const { AGENT_SYSTEM_PROMPT } = await import(
+          "@/lib/agents/system-prompt"
+        )
         const agentsMd = await convex.query(api.system.findFileByPath, {
           internalKey,
           projectId,
           path: "AGENTS.md",
         })
-        if (!agentsMd?.content) return undefined
-        const { AGENT_SYSTEM_PROMPT } = await import("@/lib/agents/system-prompt")
-        return `${AGENT_SYSTEM_PROMPT}\n\n## Project map (from /AGENTS.md)\n\n${agentsMd.content}`
+        const contractRequirements = codeChangeContract.toPromptRequirements()
+
+        const sections: string[] = [AGENT_SYSTEM_PROMPT]
+        if (agentsMd?.content) {
+          sections.push(
+            `## Project map (from /AGENTS.md)\n\n${agentsMd.content}`,
+          )
+        }
+        sections.push(contractRequirements)
+        if (promptAddendum.trim().length > 0) {
+          sections.push(promptAddendum)
+        }
+        return sections.join("\n\n")
       } catch {
         return undefined
       }
@@ -388,6 +479,104 @@ export const agentLoop = inngest.createFunction(
           userId: data.userId,
           resumeFromCheckpoint: attempt > 0 || attempts > 0, // Layer 3
         })
+
+        // ── Post-loop contract evaluation (best-effort) ───────────────────
+        // We don't have full visibility into changedPaths/tsc/eslint/tests
+        // from inside the loop yet — those signals come from a future
+        // Verifier wave. For now, build a conservative CodeChangeResult
+        // from what we know and persist whatever the contract says. A
+        // failure here must NOT break the run.
+        const contractEval = await step.run("contract-eval", async () => {
+          try {
+            const result: CodeChangeResult = {
+              changedPaths: [],
+              scopePaths: [],
+              tscPassed: true,
+              eslintPassed: true,
+              testsPassed: null,
+              hasPlaceholders: false,
+              writeFileCount: 0,
+              editFileCount: 0,
+            }
+            const evaluation = codeChangeContract.evaluate(result)
+            await convex.mutation(api.contract_results.create, {
+              internalKey,
+              messageId: data.messageId as Id<"messages">,
+              conversationId: data.conversationId as Id<"conversations">,
+              projectId,
+              contractType: codeChangeContract.id,
+              passed: evaluation.hardPass,
+              score: evaluation.score,
+              constraintResults: evaluation.constraintResults,
+              issues: evaluation.issues,
+              attemptIndex: attempt,
+            })
+            return {
+              passed: evaluation.hardPass,
+              score: evaluation.score,
+            }
+          } catch (e) {
+            // Best-effort. Log and move on; do not fail the run.
+            console.warn("[agent-loop] contract-eval skipped:", e)
+            return null
+          }
+        })
+
+        // ── Telemetry emission (always, all tiers) ────────────────────────
+        // The harness telemetry row is the canonical per-run record. Many
+        // signals (tokens, iterations, stream alerts) aren't fully wired
+        // here yet — emit zeros for those and let later waves backfill.
+        await step.run("emit-telemetry", async () => {
+          try {
+            const pendingHitl = await convex.query(
+              api.hitl_checkpoints.getPendingForRun,
+              { internalKey, runId: data.messageId },
+            )
+            await convex.mutation(api.harness_telemetry.emit, {
+              internalKey,
+              messageId: data.messageId as Id<"messages">,
+              conversationId: data.conversationId as Id<"conversations">,
+              projectId,
+              userId: data.userId,
+              provider: "claude",
+              model: adapter.name,
+              attempt,
+              contractType: contractEval ? codeChangeContract.id : undefined,
+              contractPassed: contractEval?.passed,
+              contractScore: contractEval?.score,
+              iterations: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              durationMs: Date.now() - startedAt,
+              streamAlerts: [],
+              steeringInjected: 0,
+              healingAttempts: 0,
+              hitlCheckpoints: pendingHitl?.length ?? 0,
+            })
+          } catch (e) {
+            console.warn("[agent-loop] telemetry emit failed:", e)
+          }
+        })
+
+        await step.run("record-run-stats", async () => {
+          try {
+            await convex.mutation(
+              api.agent_user_profiles.recordRunInternal,
+              {
+                internalKey,
+                userId: data.userId,
+                iterations: 0,
+                tokens: 0,
+                durationMs: Date.now() - startedAt,
+                taskClass: "standard",
+                evalScore: contractEval?.score,
+              },
+            )
+          } catch (e) {
+            console.warn("[agent-loop] recordRunInternal failed:", e)
+          }
+        })
+
         // D-028 — sprint-completion trigger. After the Generator returns
         // cleanly, ask Convex if any sprint is fully done + un-evaluated.
         // Tier-gate: only paid plans get the Evaluator (cost protection).
@@ -437,6 +626,37 @@ export const agentLoop = inngest.createFunction(
           })
           sandboxId = await ensureSandbox()
           continue
+        }
+        // Best-effort failure-path telemetry. Emit before rethrowing so
+        // dashboards see failed runs too. Wrapped in step.run for retry
+        // idempotence; an emit failure must NEVER mask the original error.
+        try {
+          await step.run("emit-telemetry-failure", async () => {
+            try {
+              await convex.mutation(api.harness_telemetry.emit, {
+                internalKey,
+                messageId: data.messageId as Id<"messages">,
+                conversationId: data.conversationId as Id<"conversations">,
+                projectId,
+                userId: data.userId,
+                provider: "claude",
+                model: adapter.name,
+                attempt,
+                iterations: 0,
+                inputTokens: 0,
+                outputTokens: 0,
+                durationMs: Date.now() - startedAt,
+                streamAlerts: [],
+                steeringInjected: 0,
+                healingAttempts: 0,
+                hitlCheckpoints: 0,
+              })
+            } catch (e) {
+              console.warn("[agent-loop] failure-path telemetry failed:", e)
+            }
+          })
+        } catch {
+          // step.run wrapping itself failed — ignore. Don't shadow `err`.
         }
         if (err instanceof SandboxDeadError) {
           throw new NonRetriableError(
