@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest"
 import { AGENT_TOOLS, FORBIDDEN_COMMAND_PATTERNS, getToolDefinition } from "@/lib/tools/definitions"
 
 describe("AGENT_TOOLS", () => {
-  it("exposes exactly ten tools (CONSTITUTION §8, D-017, D-034, D-035, D-045)", () => {
-    expect(AGENT_TOOLS).toHaveLength(10)
+  it("exposes exactly twelve tools (CONSTITUTION §8, D-017/034/035/045/050/051)", () => {
+    // D-050 amended: added web_fetch
+    // D-051 amended: added shell (stateful run_command sibling)
+    expect(AGENT_TOOLS).toHaveLength(12)
   })
 
-  it("contains the ten Constitutional tools by name", () => {
+  it("contains the twelve Constitutional tools by name", () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort()
     expect(names).toEqual(
       [
@@ -19,6 +21,8 @@ describe("AGENT_TOOLS", () => {
         "read_runtime_errors",
         "run_command",
         "search_code",
+        "shell",
+        "web_fetch",
         "write_file",
       ].sort(),
     )

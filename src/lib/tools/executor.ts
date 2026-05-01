@@ -29,6 +29,7 @@ import {
   type WebFetchArgs,
   type WebFetchDeps,
 } from "./web-fetch"
+import { ShellSessionRegistry } from "@/lib/agents/shell-session"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -72,7 +73,21 @@ const MUTATING_TOOLS = new Set([
 ])
 
 export class ToolExecutor {
-  constructor(private readonly deps: ToolExecutorDeps) {}
+  /** D-051 — One ShellSession per sandbox; lazy-initialized by `shell` tool. */
+  private readonly shellRegistry: ShellSessionRegistry
+
+  constructor(private readonly deps: ToolExecutorDeps) {
+    this.shellRegistry = new ShellSessionRegistry(deps.sandbox)
+  }
+
+  /**
+   * Dispose any persistent sandbox-scoped state (currently: shell sessions).
+   * Call this from the agent-loop's `finally` block when a run ends so
+   * a future run on the same process gets a fresh state machine.
+   */
+  dispose(): void {
+    this.shellRegistry.disposeAll()
+  }
 
   async execute(toolCall: ToolCall, ctx: ToolExecutionContext): Promise<ToolOutput> {
     try {
@@ -132,6 +147,11 @@ export class ToolExecutor {
         return await this.listFiles(toolCall.input as { directory: string }, ctx)
       case "run_command":
         return await this.runCommand(toolCall.input as RunInput, ctx)
+      case "shell":
+        return await this.shell(
+          toolCall.input as { command: string; timeoutMs?: number },
+          ctx,
+        )
       case "search_code":
         return await this.searchCode(toolCall.input as unknown as SearchCodeArgs, ctx)
       case "read_runtime_errors":
@@ -367,6 +387,55 @@ export class ToolExecutor {
           stderr: truncate(result.stderr),
           exitCode: result.exitCode,
           durationMs: result.durationMs,
+        },
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.toLowerCase().includes("timeout")) {
+        return { ok: false, error: msg, errorCode: "COMMAND_TIMEOUT" }
+      }
+      return { ok: false, error: msg, errorCode: "SANDBOX_DEAD" }
+    }
+  }
+
+  private async shell(
+    input: { command: string; timeoutMs?: number },
+    ctx: ToolExecutionContext,
+  ): Promise<ToolOutput> {
+    if (!input || typeof input.command !== "string" || input.command.trim().length === 0) {
+      return {
+        ok: false,
+        error: "shell requires a non-empty 'command' string",
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+    if (FORBIDDEN_COMMAND_PATTERNS.some((p) => p.test(input.command))) {
+      return {
+        ok: false,
+        error: `Command not allowed: ${input.command}`,
+        errorCode: "COMMAND_FORBIDDEN",
+      }
+    }
+    if (!ctx.sandboxId) {
+      return {
+        ok: false,
+        error: "Sandbox not available — cannot run commands.",
+        errorCode: "SANDBOX_DEAD",
+      }
+    }
+    try {
+      const session = this.shellRegistry.forSandbox(ctx.sandboxId)
+      const result = await session.exec(input.command, {
+        timeoutMs: input.timeoutMs,
+      })
+      return {
+        ok: true,
+        data: {
+          stdout: truncate(result.stdout),
+          stderr: truncate(result.stderr),
+          exitCode: result.exitCode,
+          durationMs: result.durationMs,
+          cwd: session.getCwd(),
         },
       }
     } catch (err) {

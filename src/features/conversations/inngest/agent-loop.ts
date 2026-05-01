@@ -672,6 +672,10 @@ export const agentLoop = inngest.createFunction(
           )
         }
         throw err
+      } finally {
+        // D-051 — release any per-sandbox session state (shell sessions, …)
+        // so a future run on the same warm process gets a fresh state machine.
+        executor.dispose()
       }
     }
   },

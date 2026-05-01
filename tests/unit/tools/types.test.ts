@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest"
 import { TOOL_ERROR_CODES, type ToolErrorCode, type ToolOutput, type ToolExecutionContext } from "@/lib/tools/types"
 
 describe("tool types", () => {
-  it("TOOL_ERROR_CODES contains all 11 Constitutional codes", () => {
+  it("TOOL_ERROR_CODES contains all Constitutional codes (D-050 amended)", () => {
+    // D-050 amendment added NETWORK_BLOCKED + NETWORK_ERROR for web_fetch.
     expect(TOOL_ERROR_CODES).toEqual([
       "PATH_LOCKED",
       "PATH_NOT_FOUND",
@@ -14,6 +15,8 @@ describe("tool types", () => {
       "COMMAND_TIMEOUT",
       "COMMAND_NONZERO_EXIT",
       "COMMAND_FORBIDDEN",
+      "NETWORK_BLOCKED",
+      "NETWORK_ERROR",
       "INTERNAL_ERROR",
     ])
   })

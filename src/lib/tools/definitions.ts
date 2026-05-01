@@ -151,7 +151,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   {
     name: "run_command",
     description:
-      "Execute a shell command in the sandbox. Use for npm install, npm test, npm run lint, etc. NOT for npm run dev (already running). Output is captured and returned. Hard timeout: 60 seconds.",
+      "Execute a shell command in the sandbox (stateless — each invocation starts at the project root). Use for one-off installs/tests/lint. NOT for npm run dev (already running). Hard timeout: 60s. PREFER `shell` for sequences (build → test → lint) so cd persists across calls.",
     inputSchema: {
       type: "object",
       properties: {
@@ -159,6 +159,25 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         cwd: {
           type: "string",
           description: "Working directory; defaults to project root",
+        },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "shell",
+    description:
+      "Stateful shell — like run_command but the working directory persists across calls. Use this when running a sequence of related commands (e.g. cd packages/web && pnpm install && pnpm test) so you don't pay for re-cd'ing every call. The session retains its cwd until you explicitly `cd` somewhere else. Output is captured and returned. Hard timeout: 60s per call. Inline env vars (FOO=bar npm run x) are supported; persistent `export VAR=...` is NOT (those reset between calls — use inline form or wrap in a subshell).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "Shell command to run in the persistent session.",
+        },
+        timeoutMs: {
+          type: "integer",
+          description: "Optional per-call timeout. Defaults to 60000.",
         },
       },
       required: ["command"],
