@@ -165,6 +165,26 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "web_fetch",
+    description:
+      "Fetch a URL and return its content as Markdown-ish text. Use this to read documentation, library READMEs, API specs, or blog posts before writing code that depends on them — it grounds your output in current API surfaces instead of training data. Set `prompt` to ask a focused question and receive a summary instead of the raw page (saves tokens). Hard caps: 30s timeout, 1 MB body, results cached 15min. Refuses private IPs and non-http(s) schemes. NOT for fetching files inside the sandbox — use read_file for that.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "Absolute http(s) URL to fetch.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "Optional: a question to focus a summary. When set, returns a Haiku-generated summary keyed to your question instead of the raw page.",
+        },
+      },
+      required: ["url"],
+    },
+  },
+  {
     name: "read_runtime_errors",
     description:
       "Read recent uncaught errors from the running preview app. Returns errors captured by window.onerror, unhandled promise rejections, console.error calls, failed fetches, and React error boundaries. Empty array means no runtime errors right now (which is what you want). Use this to diagnose 'this button doesn't work' style reports — the preview reports the actual error you can fix.",

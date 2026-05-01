@@ -36,6 +36,7 @@ import {
   SandboxDeadError,
 } from "@/lib/sandbox"
 import { ToolExecutor } from "@/lib/tools/executor"
+import { makeSummarizer as makeWebFetchSummarizer } from "@/lib/agents/haiku-summarizer"
 import { withSpan } from "@/lib/observability/spans"
 import { verify, verifyBuild } from "@/lib/agents/verifier"
 import {
@@ -220,6 +221,14 @@ export const agentLoop = inngest.createFunction(
           })
         },
       },
+      // D-050 — wire web_fetch with a Haiku-backed summarizer. When
+      // ANTHROPIC_API_KEY is unset (e.g. in offline dev), the dep is
+      // omitted and web_fetch returns raw content (no summarization).
+      webFetch: process.env.ANTHROPIC_API_KEY
+        ? {
+            summarize: makeWebFetchSummarizer(),
+          }
+        : undefined,
     })
 
     // D-039/40/41 — classify the run, pick a model, size the budget. We

@@ -15,6 +15,10 @@ export const TOOL_ERROR_CODES = [
   "COMMAND_TIMEOUT",
   "COMMAND_NONZERO_EXIT",
   "COMMAND_FORBIDDEN",
+  /** D-050 — web_fetch: SSRF guard tripped or DNS resolution failed. */
+  "NETWORK_BLOCKED",
+  /** D-050 — web_fetch: HTTP error / connection refused / non-blocked failure. */
+  "NETWORK_ERROR",
   "INTERNAL_ERROR",
 ] as const
 

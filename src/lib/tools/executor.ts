@@ -23,6 +23,12 @@ import {
   type ReadRuntimeErrorsArgs,
   type ReadRuntimeErrorsDeps,
 } from "./read-runtime-errors"
+import {
+  executeWebFetch,
+  WebFetchError,
+  type WebFetchArgs,
+  type WebFetchDeps,
+} from "./web-fetch"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -45,6 +51,13 @@ export interface ToolExecutorDeps {
    * must never fail an agent run).
    */
   recordEdit?: (path: string) => Promise<void>
+  /**
+   * D-050 — Optional web_fetch deps. When provided, the `web_fetch` tool
+   * uses them (notably: a Haiku-backed summarizer). When absent, the
+   * tool still works but `prompt`-driven summarization falls back to
+   * returning the raw fetched content.
+   */
+  webFetch?: WebFetchDeps
 }
 
 const COMMAND_TIMEOUT_MS = 60_000
@@ -125,6 +138,8 @@ export class ToolExecutor {
         return await this.readRuntimeErrors(
           toolCall.input as unknown as ReadRuntimeErrorsArgs,
         )
+      case "web_fetch":
+        return await this.webFetch(toolCall.input as unknown as WebFetchArgs)
       default:
         return {
           ok: false,
@@ -422,6 +437,48 @@ export class ToolExecutor {
         },
       }
     } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+  }
+
+  private async webFetch(input: WebFetchArgs): Promise<ToolOutput> {
+    if (!input || typeof input.url !== "string" || input.url.length === 0) {
+      return {
+        ok: false,
+        error: "web_fetch requires a non-empty 'url' string",
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+    try {
+      const result = await executeWebFetch(input, this.deps.webFetch ?? {})
+      return {
+        ok: true,
+        data: {
+          content: result.content,
+          url: result.url,
+          title: result.title,
+          cached: result.cached,
+          truncated: result.truncated,
+          contentType: result.contentType,
+        },
+      }
+    } catch (err) {
+      if (err instanceof WebFetchError) {
+        return {
+          ok: false,
+          error: `${err.code}: ${err.message}`,
+          errorCode:
+            err.code === "BLOCKED_HOST" || err.code === "DNS_FAILED"
+              ? "NETWORK_BLOCKED"
+              : err.code === "TIMEOUT"
+                ? "COMMAND_TIMEOUT"
+                : "NETWORK_ERROR",
+        }
+      }
       return {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
