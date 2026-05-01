@@ -35,8 +35,36 @@ const PERSONAS: Array<{
 
 export function ForSection() {
   return (
-    <section className="bg-surface-0 px-6 py-24 md:px-12 md:py-32">
-      <div className="mx-auto max-w-[1200px]">
+    <section className="relative overflow-hidden bg-surface-0 px-6 py-24 md:px-12 md:py-32">
+      {/* Wide primary-tinted grid — strong edge fade, full in the card area */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(77,95,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(77,95,255,0.04) 1px, transparent 1px)",
+          backgroundSize: "80px 80px",
+          maskImage:
+            "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
+        }}
+      />
+      {/* Horizontal lines only — subtle ruled-paper texture over the card strip */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px)",
+          backgroundSize: "80px 40px",
+          maskImage:
+            "linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)",
+        }}
+      />
+      <div className="relative mx-auto max-w-[1200px]">
         <FadeUp>
           <SectionLabel>Who it&apos;s for</SectionLabel>
         </FadeUp>
