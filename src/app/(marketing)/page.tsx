@@ -5,13 +5,19 @@ import { ForSection } from "@/features/marketing/components/landing/for-section"
 import { FaqSection } from "@/features/marketing/components/landing/faq-section"
 import { PricingTeaserSection } from "@/features/marketing/components/landing/pricing-teaser-section"
 import { CtaSection } from "@/features/marketing/components/landing/cta-section"
+import {
+  PainStatementSection,
+  ProofStatementSection,
+} from "@/features/marketing/components/landing/statement-section"
 
 export default function LandingPage() {
   return (
     <>
       <HeroSection />
+      <PainStatementSection />
       <HowItWorksSection />
       <FeaturesSection />
+      <ProofStatementSection />
       <ForSection />
       <FaqSection />
       <PricingTeaserSection />
