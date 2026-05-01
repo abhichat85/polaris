@@ -73,7 +73,7 @@ export function HeroSection() {
             <motion.h1
               variants={fadeUp}
               transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className="font-heading text-[44px] font-extrabold leading-[1.05] tracking-[-0.04em] text-foreground md:text-[56px]"
+              className="font-heading text-[46px] font-extrabold leading-[1.05] tracking-[-0.04em] text-foreground md:text-[60px] lg:text-[72px]"
             >
               The AI IDE that builds
               <br />
