@@ -24,6 +24,11 @@ import type { ToolOutput } from "@/lib/tools/types"
 import { AGENT_SYSTEM_PROMPT } from "./system-prompt"
 import { COMPACTION_THRESHOLD_TOKENS } from "./compactor"
 import type { VerifyResult } from "./verifier"
+import {
+  inferVerificationLevel,
+  type VerificationLevel,
+} from "./verification-policy"
+import type { TaskClass } from "./task-classifier"
 import type {
   AgentCheckpoint,
   AgentDoneStatus,
@@ -227,6 +232,12 @@ export interface AgentRunInput {
   projectId: string
   userId: string
   resumeFromCheckpoint: boolean
+  /**
+   * D-049 — task class, used by `maybeVerify()` to optionally skip
+   * `next build` (and rarely tsc/eslint) for trivially-scoped changes.
+   * Defaults to "standard" when omitted (pre-D-049 behaviour: full verify).
+   */
+  taskClass?: TaskClass
 }
 
 interface RunState {
@@ -251,6 +262,11 @@ interface RunState {
    */
   totalChangedPaths: Set<string>
   buildFixCount: number
+  /**
+   * D-049 — telemetry: which verification level was applied at each
+   * completion claim. Useful for measuring how often we're skipping.
+   */
+  verificationLevels: VerificationLevel[]
 }
 
 export class AgentRunner {
@@ -455,6 +471,7 @@ export class AgentRunner {
           // D-037 — build-verification state likewise resets on resume.
           totalChangedPaths: new Set<string>(),
           buildFixCount: 0,
+          verificationLevels: [],
         }
       }
     }
@@ -468,6 +485,7 @@ export class AgentRunner {
       autoFixCount: 0,
       totalChangedPaths: new Set<string>(),
       buildFixCount: 0,
+      verificationLevels: [],
     }
   }
 
@@ -603,7 +621,23 @@ export class AgentRunner {
     input: AgentRunInput,
     state: RunState,
   ): Promise<"completed" | "continue" | "error"> {
-    // Stage A — path-level verifier (tsc + eslint).
+    // D-049 — decide which stages to run based on what was actually changed
+    // and how the task was classified. Cheap edits skip the expensive build.
+    // When level === "none" we don't even call the path-level verifier.
+    const level = inferVerificationLevel({
+      taskClass: input.taskClass ?? "standard",
+      changedPaths: state.pendingChangedPaths,
+    })
+    state.verificationLevels.push(level)
+
+    if (level === "none") {
+      // Trust the change set; clear pending so we don't re-evaluate next turn.
+      state.pendingChangedPaths.clear()
+      return "completed"
+    }
+
+    // Stage A — path-level verifier (tsc + eslint). Run for both
+    // "verify-only" and "full".
     if (this.deps.verify && state.pendingChangedPaths.size > 0) {
       const result = await this.deps.verify(state.pendingChangedPaths)
       if (!result.ok) {
@@ -635,7 +669,9 @@ export class AgentRunner {
     //   - verifyBuild dep is wired (caller decides per-tier policy)
     //   - the agent has actually accumulated edits in this run
     //   - we have build-fix budget remaining
+    //   - D-049: the inferred level is "full" (skip for "verify-only")
     if (
+      level === "full" &&
       this.deps.verifyBuild &&
       state.totalChangedPaths.size > 0
     ) {
