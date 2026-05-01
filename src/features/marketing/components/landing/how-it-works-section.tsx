@@ -22,8 +22,36 @@ const STEPS = [
 
 export function HowItWorksSection() {
   return (
-    <section className="border-t border-foreground/[0.03] bg-surface-0 px-6 py-24 md:px-12 md:py-32">
-      <div className="mx-auto max-w-[1200px]">
+    <section className="relative overflow-hidden border-t border-foreground/[0.04] bg-surface-2 px-6 py-24 md:px-12 md:py-32">
+      {/* Rectangular grid — fades in from bottom where the cards live */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+          maskImage:
+            "radial-gradient(ellipse 90% 80% at 50% 110%, black 30%, transparent 75%)",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 90% 80% at 50% 110%, black 30%, transparent 75%)",
+        }}
+      />
+      {/* Faint indigo accent grid on top — larger squares for depth layering */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(77,95,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(77,95,255,0.035) 1px, transparent 1px)",
+          backgroundSize: "144px 144px",
+          maskImage:
+            "radial-gradient(ellipse 70% 60% at 50% 100%, black 10%, transparent 65%)",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 70% 60% at 50% 100%, black 10%, transparent 65%)",
+        }}
+      />
+      <div className="relative mx-auto max-w-[1200px]">
         <div className="mb-16 grid items-end gap-10 md:grid-cols-2 md:gap-16">
           <div>
             <FadeUp>
