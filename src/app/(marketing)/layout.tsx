@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { MarketingHeader } from "@/features/marketing/components/marketing-header"
 import { Footer } from "@/features/marketing/components/footer"
+import { LenisProvider } from "@/features/marketing/components/lenis-provider"
 
 export const metadata: Metadata = {
   title:
@@ -22,10 +23,12 @@ export default function MarketingLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-surface-0">
-      <MarketingHeader />
-      <main>{children}</main>
-      <Footer />
-    </div>
+    <LenisProvider>
+      <div className="min-h-screen bg-surface-0">
+        <MarketingHeader />
+        <main>{children}</main>
+        <Footer />
+      </div>
+    </LenisProvider>
   )
 }
