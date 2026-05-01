@@ -476,6 +476,7 @@ export const agentLoop = inngest.createFunction(
           projectId: data.projectId,
           userId: data.userId,
           resumeFromCheckpoint: attempt > 0 || attempts > 0, // Layer 3
+          taskClass, // D-049 — drives verification skip for trivial edits
         })
 
         // ── Post-loop contract evaluation (best-effort) ───────────────────
