@@ -3,12 +3,14 @@ import { MarketingHeader } from "@/features/marketing/components/marketing-heade
 import { Footer } from "@/features/marketing/components/footer"
 
 export const metadata: Metadata = {
-  title: "Polaris by Praxiom — From idea to running app, in one chat.",
+  title:
+    "Polaris by Praxiom — The AI IDE that builds from spec, not instinct.",
   description:
-    "Polaris is an AI-powered cloud IDE that turns natural-language ideas into deployable Next.js apps. Built by Praxiom.",
+    "Polaris is a spec-driven AI cloud IDE. Describe your app, watch it run live, ship it to Vercel. Real Next.js + Supabase. You own the code.",
   openGraph: {
     title: "Polaris by Praxiom",
-    description: "From idea to running app, in one chat.",
+    description:
+      "The AI IDE that builds from spec, not instinct. Spec-driven. Cloud-native. Yours to keep.",
     type: "website",
     url: "https://build.praxiomai.xyz",
   },
