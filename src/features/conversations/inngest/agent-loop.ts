@@ -44,7 +44,7 @@ import {
   shouldWireVerify,
   shouldWireVerifyBuild,
 } from "@/lib/agents/verification-policy"
-import { classifyTask } from "@/lib/agents/task-classifier"
+import { classifyTask, classifyTaskWithLLM } from "@/lib/agents/task-classifier"
 import { resolveTaskModel, applyTierGate } from "@/lib/agents/task-models"
 import {
   CodeChangeContract,
@@ -255,12 +255,23 @@ export const agentLoop = inngest.createFunction(
           /* no plan / older convex schema — treat as planSize=0 */
         }
 
-        const taskClass = classifyTask({
+        // D-052 — feature-flagged LLM classifier (Haiku, cached).
+        // POLARIS_TASK_CLASSIFIER=llm enables it; default stays heuristic
+        // until we've validated A/B numbers. Pro/Team only — free tier
+        // uses heuristic regardless to avoid the per-run Haiku cost.
+        const useLLMClassifier =
+          process.env.POLARIS_TASK_CLASSIFIER === "llm" &&
+          plan !== "free" &&
+          !!process.env.ANTHROPIC_API_KEY
+        const classifierInput = {
           userPrompt,
           planSize,
           recentFileCount: 0, // populated once E.1 ships
           isFirstTurn,
-        })
+        }
+        const taskClass = useLLMClassifier
+          ? await classifyTaskWithLLM(classifierInput)
+          : classifyTask(classifierInput)
         const baseModel = resolveTaskModel({ role: "executor", taskClass })
         const modelId = applyTierGate(plan, baseModel, "executor")
         return { taskClass, modelId }
