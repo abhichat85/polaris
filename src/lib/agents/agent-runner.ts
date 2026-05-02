@@ -29,6 +29,7 @@ import {
   type VerificationLevel,
 } from "./verification-policy"
 import type { TaskClass } from "./task-classifier"
+import { runCompactionPipeline, totalTokens as estimateContextTokens } from "./context-pipeline"
 import type {
   AgentCheckpoint,
   AgentDoneStatus,
@@ -288,35 +289,40 @@ export class AgentRunner {
           `Agent reached iteration limit (${budget.maxIterations}). Latest changes are saved.`,
         )
       }
-      // D-027 — auto-compact at COMPACTION_THRESHOLD if compactor present.
-      // Only triggers ONCE before the hard cap, so a runaway agent that
-      // somehow blows through the post-compact budget will still hit the
-      // hard wall.
+      // D-027/D-054 — multi-stage compaction. The pipeline tries cheap
+      // strategies first (drop old large tool_results, snip middles)
+      // before falling through to expensive Haiku-summary calls. Runs
+      // every iteration once we cross the threshold, NOT just once: in
+      // long agent runs we may need to trim repeatedly as new tool
+      // results pile up. Cost remains bounded because the cheap stages
+      // are free and the pipeline exits as soon as we're under target.
       const totalTokens = state.totalInputTokens + state.totalOutputTokens
       if (
         this.deps.compact &&
-        totalTokens >= COMPACTION_THRESHOLD_TOKENS &&
-        !state.compacted
+        totalTokens >= COMPACTION_THRESHOLD_TOKENS
       ) {
-        const result = await this.deps.compact(state.messages)
-        // Replace the conversation with the handoff seed.
-        state.messages = [
+        const targetTokens = Math.floor(COMPACTION_THRESHOLD_TOKENS * 0.6)
+        const pipelineResult = await runCompactionPipeline(
+          state.messages,
+          targetTokens,
           {
-            role: "user",
-            content:
-              `[Continuing from compaction. Use this handoff artifact to ` +
-              `pick up the work cleanly.]\n\n${result.artifact}`,
+            compact: this.deps.compact,
+            // microcompact + context-collapse use the same Haiku-backed
+            // summarizer that the legacy compactor uses (best-effort:
+            // when not wired, those strategies skip).
           },
-        ]
-        // Don't reset iterationCount — the loop has done real work.
-        // Token totals carry forward so we still respect the hard cap.
-        state.compacted = true
-        // Tell the sink so the chat UI can render a "compacted" banner.
-        if (this.deps.sink.appendText) {
-          await this.deps.sink.appendText(
-            input.messageId,
-            `\n\n_(context compacted at ${totalTokens.toLocaleString()} tokens)_\n\n`,
-          )
+        )
+        if (pipelineResult.applied.length > 0) {
+          state.messages = pipelineResult.messages
+          state.compacted = true
+          // UI banner — show which strategies fired (helps users + ops
+          // understand cost behaviour).
+          if (this.deps.sink.appendText) {
+            await this.deps.sink.appendText(
+              input.messageId,
+              `\n\n_(context compacted at ${totalTokens.toLocaleString()} tokens via: ${pipelineResult.applied.join(", ")})_\n\n`,
+            )
+          }
         }
       }
 
