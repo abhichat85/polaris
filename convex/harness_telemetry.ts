@@ -45,6 +45,15 @@ export const emit = mutation({
     healingAttempts: v.number(),
     hitlCheckpoints: v.number(),
     taskClass: v.optional(v.string()),
+    /** D-052 / D-054 / D-055 / D-056 telemetry. */
+    taskClassifierMethod: v.optional(v.string()),
+    verificationLevels: v.optional(v.array(v.string())),
+    compactionStrategiesApplied: v.optional(v.array(v.string())),
+    compactionTokensSavedEstimate: v.optional(v.number()),
+    hooksInvoked: v.optional(v.array(v.string())),
+    hooksFailed: v.optional(v.array(v.string())),
+    mcpCallsTotal: v.optional(v.number()),
+    mcpServersConfigured: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     if (args.internalKey !== process.env.POLARIS_CONVEX_INTERNAL_KEY) {
@@ -71,6 +80,14 @@ export const emit = mutation({
       healingAttempts: args.healingAttempts,
       hitlCheckpoints: args.hitlCheckpoints,
       taskClass: args.taskClass,
+      taskClassifierMethod: args.taskClassifierMethod,
+      verificationLevels: args.verificationLevels,
+      compactionStrategiesApplied: args.compactionStrategiesApplied,
+      compactionTokensSavedEstimate: args.compactionTokensSavedEstimate,
+      hooksInvoked: args.hooksInvoked,
+      hooksFailed: args.hooksFailed,
+      mcpCallsTotal: args.mcpCallsTotal,
+      mcpServersConfigured: args.mcpServersConfigured,
       createdAt: Date.now(),
     })
   },

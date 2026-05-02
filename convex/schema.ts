@@ -778,6 +778,38 @@ export default defineSchema({
     hitlCheckpoints: v.number(),
     /** Task class chosen pre-flight (D-041). */
     taskClass: v.optional(v.string()),
+    /**
+     * D-052 — How the task class was decided. "heuristic" = regex-only
+     * (default), "llm" = Haiku classifier, "llm_cached" = served from
+     * the LLM cache. Used for A/B comparison.
+     */
+    taskClassifierMethod: v.optional(v.string()),
+    /**
+     * D-054 — Per-completion-claim verification levels (0..N entries).
+     * Each entry is "none" | "verify-only" | "full". Used to measure
+     * how often the cheap-skip path fires.
+     */
+    verificationLevels: v.optional(v.array(v.string())),
+    /**
+     * D-054 — Names of compaction strategies applied (in order) during
+     * the run. Empty when compaction did not fire. Useful for measuring
+     * how often we save the cost of expensive auto-compact.
+     */
+    compactionStrategiesApplied: v.optional(v.array(v.string())),
+    /**
+     * D-054 — Estimated token savings from cheap compaction stages
+     * (budget-reduction + snip + microcompact + context-collapse) vs.
+     * what an unconditional auto-compact would have cost. Best-effort
+     * estimate — useful as a relative metric, not an absolute number.
+     */
+    compactionTokensSavedEstimate: v.optional(v.number()),
+    /** D-055 — IDs of hooks invoked during the run + IDs that failed. */
+    hooksInvoked: v.optional(v.array(v.string())),
+    hooksFailed: v.optional(v.array(v.string())),
+    /** D-056 — MCP tool calls made during the run. */
+    mcpCallsTotal: v.optional(v.number()),
+    /** D-056 — MCP servers configured for this run. */
+    mcpServersConfigured: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_message", ["messageId"])
