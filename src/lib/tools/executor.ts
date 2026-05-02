@@ -39,6 +39,8 @@ import {
 } from "./code-nav"
 import type { HookRunner } from "@/lib/agents/hooks/hook-runner"
 import type { HookContext } from "@/lib/agents/hooks/types"
+import type { MCPRegistry } from "@/lib/agents/mcp/registry"
+import { isMCPName } from "@/lib/agents/mcp/types"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -81,6 +83,12 @@ export interface ToolExecutorDeps {
    * hook invocation receives.
    */
   hookContext?: () => HookContext
+  /**
+   * D-056 — Optional MCP registry. When provided and a tool name has
+   * the `mcp__<server>__<tool>` prefix, the call is routed to the
+   * matching MCP client instead of the local dispatch table.
+   */
+  mcp?: MCPRegistry
 }
 
 const COMMAND_TIMEOUT_MS = 60_000
@@ -103,12 +111,15 @@ export class ToolExecutor {
   }
 
   /**
-   * Dispose any persistent sandbox-scoped state (currently: shell sessions).
-   * Call this from the agent-loop's `finally` block when a run ends so
-   * a future run on the same process gets a fresh state machine.
+   * Dispose any persistent sandbox-scoped state (shell sessions, MCP
+   * clients). Call this from the agent-loop's `finally` block when a
+   * run ends so a future run on the same process gets a fresh state.
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.shellRegistry.disposeAll()
+    if (this.deps.mcp) {
+      await this.deps.mcp.close()
+    }
   }
 
   async execute(toolCall: ToolCall, ctx: ToolExecutionContext): Promise<ToolOutput> {
@@ -193,6 +204,12 @@ export class ToolExecutor {
     toolCall: ToolCall,
     ctx: ToolExecutionContext,
   ): Promise<ToolOutput> {
+    // D-056 — MCP routing. Tools prefixed `mcp__<server>__<tool>` are
+    // dispatched to the registered MCP client; everything else falls
+    // through to the native switch below.
+    if (this.deps.mcp && isMCPName(toolCall.name) && this.deps.mcp.ownsToolCall(toolCall)) {
+      return await this.deps.mcp.dispatch(toolCall)
+    }
     switch (toolCall.name) {
       case "read_file":
         return await this.readFile(toolCall.input as ReadInput, ctx)

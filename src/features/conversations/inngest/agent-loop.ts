@@ -684,9 +684,15 @@ export const agentLoop = inngest.createFunction(
         }
         throw err
       } finally {
-        // D-051 — release any per-sandbox session state (shell sessions, …)
-        // so a future run on the same warm process gets a fresh state machine.
-        executor.dispose()
+        // D-051/D-056 — release per-sandbox state (shell sessions, MCP
+        // clients, …) so a future run on the same warm process gets a
+        // fresh state machine. Best-effort: never let teardown errors
+        // mask the original error.
+        try {
+          await executor.dispose()
+        } catch {
+          /* swallow */
+        }
       }
     }
   },
