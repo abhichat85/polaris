@@ -157,7 +157,7 @@ export const agentLoop = inngest.createFunction(
     const sandbox = getSandboxProvider()
 
     // Resolve the per-project sandbox: reuse if alive + within TTL,
-    // otherwise provision and persist.
+    // otherwise claim from the warm pool (Phase 3.1) or provision fresh.
     const projectId = data.projectId as Id<"projects">
     const ensureSandbox = async (): Promise<string> => {
       const existing = await convex.query(api.sandboxes.getByProject, {
@@ -168,19 +168,47 @@ export const agentLoop = inngest.createFunction(
       if (existing && existing.alive && existing.expiresAt > now) {
         return existing.sandboxId
       }
-      const handle = await withSpan(
-        "sandbox.boot",
-        `provision sandbox for ${projectId}`,
-        () => sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS }),
-        { projectId, provider: sandbox.name },
-      )
+
+      // Phase 3.1 — try the warm pool first. Only paid tiers get pool
+      // priority; free tier always cold-provisions.
+      const sandboxId = await (async () => {
+        if (plan === "free") return null
+        try {
+          const claimed = await convex.mutation(
+            api.warm_sandboxes.claimOneInternal,
+            { internalKey, template: "nextjs", claimedBy: String(projectId) },
+          )
+          if (claimed) {
+            return await withSpan(
+              "sandbox.claim_warm",
+              `claim warm sandbox for ${projectId}`,
+              async () => claimed.sandboxId,
+              { projectId, source: "warm_pool", warmSandboxId: claimed.sandboxId },
+            )
+          }
+        } catch (err) {
+          // Best-effort — fall through to cold provisioning.
+          // eslint-disable-next-line no-console
+          console.warn("[agent-loop] warm pool claim failed:", err)
+        }
+        const handle = await withSpan(
+          "sandbox.boot",
+          `provision sandbox for ${projectId}`,
+          () => sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS }),
+          { projectId, provider: sandbox.name, source: "cold" },
+        )
+        return handle.id
+      })()
+
+      const finalSandboxId = sandboxId ?? await sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS }).then((h) => h.id)
+
       await convex.mutation(api.sandboxes.setForProject, {
         internalKey,
         projectId,
-        sandboxId: handle.id,
+        sandboxId: finalSandboxId,
         expiresAt: now + SANDBOX_TTL_MS,
       })
-      return handle.id
+      return finalSandboxId
     }
 
     let sandboxId = await ensureSandbox()
@@ -315,6 +343,77 @@ export const agentLoop = inngest.createFunction(
         : undefined,
       // D-056 — MCP-routed tools (per-project, optional).
       mcp: mcpRegistry,
+      // Phase 3.3 — plan tools deps. Always wired; the tools return
+      // friendly "no plan yet" messages when no plan exists.
+      planTools: {
+        getPlan: async () => {
+          const row = await convex.query(
+            api.agent_plans.getByProjectInternal,
+            { internalKey, projectId },
+          )
+          if (!row) return null
+          return {
+            _id: String(row._id),
+            projectId: String(row.projectId),
+            title: row.title,
+            features: row.features,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          }
+        },
+        updateFeatureStatus: async (args) => {
+          await convex.mutation(api.agent_plans.updateFeatureStatusInternal, {
+            internalKey,
+            projectId,
+            featureId: args.featureId,
+            status: args.status,
+            blocker: args.blocker,
+          })
+        },
+        requestPlannerInput: async (args) => {
+          // Locate the plan to attach the clarification.
+          const plan = await convex.query(
+            api.agent_plans.getByProjectInternal,
+            { internalKey, projectId },
+          )
+          if (!plan) {
+            return { timedOut: true } // no plan → no planner to ask
+          }
+          // Insert pending row, fire the dispatcher event, poll for answer.
+          const clarificationId = await convex.mutation(
+            api.agent_plans.askClarificationInternal,
+            {
+              internalKey,
+              planId: plan._id,
+              projectId,
+              runId: data.messageId,
+              question: args.question,
+            },
+          )
+          await inngest.send({
+            name: "plan/clarification",
+            data: {
+              clarificationId: String(clarificationId),
+              question: args.question,
+              planSummary: plan.title,
+            },
+          })
+          // Poll Convex every 2s up to timeoutMs for the answer.
+          const deadline = Date.now() + args.timeoutMs
+          const POLL_INTERVAL_MS = 2_000
+          while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+            const row = await convex.query(
+              api.agent_plans.getClarificationInternal,
+              { internalKey, id: clarificationId },
+            )
+            if (row && row.status === "answered" && row.answer) {
+              return { answer: row.answer }
+            }
+          }
+          return { timedOut: true }
+        },
+      },
     })
 
     // D-039/40/41 — classify the run, pick a model, size the budget. We
