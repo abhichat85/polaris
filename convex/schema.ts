@@ -945,4 +945,137 @@ export default defineSchema({
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
   }).index("by_project", ["projectId"]),
+
+  // ── D-055 / Phase 2.2 — Hook configuration (per project) ─────────────────
+  // User-defined endpoints that intercept agent tool calls. Function-target
+  // hooks are restricted to the harness layer (no per-project Convex action
+  // hooks here — those would need a separate trust model). HTTP targets are
+  // the project-author-facing surface.
+  hooks: defineTable({
+    projectId: v.id("projects"),
+    /** Stable id used in audit logs / decisions. */
+    hookId: v.string(),
+    event: v.union(
+      v.literal("pre_tool_call"),
+      v.literal("post_tool_call"),
+      v.literal("iteration_start"),
+      v.literal("agent_done"),
+    ),
+    target: v.object({
+      url: v.string(),
+      headers: v.optional(v.record(v.string(), v.string())),
+    }),
+    failMode: v.optional(v.union(v.literal("open"), v.literal("closed"))),
+    timeoutMs: v.optional(v.number()),
+    enabled: v.boolean(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_enabled", ["projectId", "enabled"]),
+
+  // ── D-056 / Phase 2.1 — MCP server registry (per project) ────────────────
+  // A list of MCP servers the agent can call into for that project. Stdio
+  // transports run a subprocess inside the host (NOT inside the agent
+  // sandbox) — they're the project owner's trusted tools. HTTP/SSE servers
+  // are remote MCP endpoints. tool_allowlist scopes the surface.
+  mcp_servers: defineTable({
+    projectId: v.id("projects"),
+    name: v.string(),
+    transport: v.union(
+      v.object({
+        type: v.literal("stdio"),
+        command: v.string(),
+        args: v.optional(v.array(v.string())),
+        env: v.optional(v.record(v.string(), v.string())),
+      }),
+      v.object({
+        type: v.literal("http"),
+        url: v.string(),
+        headers: v.optional(v.record(v.string(), v.string())),
+      }),
+      v.object({
+        type: v.literal("sse"),
+        url: v.string(),
+        headers: v.optional(v.record(v.string(), v.string())),
+      }),
+    ),
+    timeoutMs: v.optional(v.number()),
+    toolAllowlist: v.optional(v.array(v.string())),
+    enabled: v.boolean(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_enabled", ["projectId", "enabled"]),
+
+  // ── Phase 3.1 — Warm sandbox pool ────────────────────────────────────────
+  // Pre-provisioned, idle E2B sandboxes ready to be claimed by the next
+  // agent run. The pool is replenished by a 60s Inngest cron based on
+  // active-user load. claimedAt non-null = claimed (about to be associated
+  // with a project); null = idle and available.
+  warm_sandboxes: defineTable({
+    sandboxId: v.string(),
+    template: v.string(),
+    createdAt: v.number(),
+    /** When non-null, the warm sandbox is assigned and no longer claimable. */
+    claimedAt: v.optional(v.number()),
+    claimedBy: v.optional(v.string()),
+  })
+    .index("by_sandbox_id", ["sandboxId"])
+    .index("by_claimed", ["claimedAt"]),
+
+  // ── Phase 3.3 — Structured plan ──────────────────────────────────────────
+  // The planner subagent writes a feature list here; the executor reads/
+  // updates feature status via tools. Replaces the file-only handoff via
+  // /docs/plan.md (which is now generated as a read-only view of this).
+  // Named `agent_plans` to avoid collision with the billing-tier `plans`
+  // table.
+  agent_plans: defineTable({
+    projectId: v.id("projects"),
+    title: v.string(),
+    features: v.array(
+      v.object({
+        id: v.string(),
+        title: v.string(),
+        description: v.string(),
+        acceptanceCriteria: v.array(v.string()),
+        dependencies: v.array(v.string()),
+        status: v.union(
+          v.literal("pending"),
+          v.literal("in_progress"),
+          v.literal("done"),
+          v.literal("blocked"),
+        ),
+        blockers: v.optional(v.array(v.string())),
+        updatedAt: v.optional(v.number()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_project", ["projectId"]),
+
+  // Phase 3.3 — Clarification round-trips between executor and planner.
+  // When the executor needs guidance mid-run, it inserts a row here with
+  // status="pending"; a separate Inngest function dispatches it to the
+  // planner subagent and writes the answer back.
+  plan_clarifications: defineTable({
+    planId: v.id("agent_plans"),
+    projectId: v.id("projects"),
+    runId: v.string(),
+    question: v.string(),
+    answer: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("answered"),
+      v.literal("timed_out"),
+    ),
+    askedAt: v.number(),
+    answeredAt: v.optional(v.number()),
+  })
+    .index("by_plan", ["planId"])
+    .index("by_run", ["runId"])
+    .index("by_status", ["status"]),
 })
