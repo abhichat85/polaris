@@ -419,7 +419,7 @@ export const agentLoop = inngest.createFunction(
     // D-039/40/41 — classify the run, pick a model, size the budget. We
     // need: latest user prompt (the agent's marching orders), whether
     // this is the first turn, and how big the active plan is.
-    const { taskClass, modelId } = await (async () => {
+    const { taskClass, modelId, classifierMethod } = await (async () => {
       try {
         const messages = await convex.query(api.system.getConversationMessages, {
           internalKey,
@@ -454,16 +454,20 @@ export const agentLoop = inngest.createFunction(
           recentFileCount: 0, // populated once E.1 ships
           isFirstTurn,
         }
+        const classifierMethod: "heuristic" | "llm" = useLLMClassifier
+          ? "llm"
+          : "heuristic"
         const taskClass = useLLMClassifier
           ? await classifyTaskWithLLM(classifierInput)
           : classifyTask(classifierInput)
         const baseModel = resolveTaskModel({ role: "executor", taskClass })
         const modelId = applyTierGate(plan, baseModel, "executor")
-        return { taskClass, modelId }
+        return { taskClass, modelId, classifierMethod }
       } catch {
         // Defensive fallback — Sonnet, standard task class.
         return {
           taskClass: "standard" as const,
+          classifierMethod: "heuristic" as const,
           modelId: applyTierGate(
             plan,
             resolveTaskModel({ role: "executor", taskClass: "standard" }),
@@ -742,6 +746,7 @@ export const agentLoop = inngest.createFunction(
               api.hitl_checkpoints.getPendingForRun,
               { internalKey, runId: data.messageId },
             )
+            const stats = runner.getLastRunStats()
             await convex.mutation(api.harness_telemetry.emit, {
               internalKey,
               messageId: data.messageId as Id<"messages">,
@@ -754,14 +759,20 @@ export const agentLoop = inngest.createFunction(
               contractType: contractEval ? codeChangeContract.id : undefined,
               contractPassed: contractEval?.passed,
               contractScore: contractEval?.score,
-              iterations: 0,
-              inputTokens: 0,
-              outputTokens: 0,
+              iterations: stats?.iterations ?? 0,
+              inputTokens: stats?.inputTokens ?? 0,
+              outputTokens: stats?.outputTokens ?? 0,
               durationMs: Date.now() - startedAt,
               streamAlerts: [],
               steeringInjected: 0,
               healingAttempts: 0,
               hitlCheckpoints: pendingHitl?.length ?? 0,
+              taskClass,
+              taskClassifierMethod: classifierMethod,
+              verificationLevels: stats?.verificationLevels,
+              compactionStrategiesApplied: stats?.compactionStrategiesApplied,
+              compactionTokensSavedEstimate: stats?.compactionTokensSavedEstimate,
+              mcpServersConfigured: mcpRegistry ? mcpExtraTools.length : 0,
             })
           } catch (e) {
             console.warn("[agent-loop] telemetry emit failed:", e)
@@ -770,15 +781,16 @@ export const agentLoop = inngest.createFunction(
 
         await step.run("record-run-stats", async () => {
           try {
+            const stats = runner.getLastRunStats()
             await convex.mutation(
               api.agent_user_profiles.recordRunInternal,
               {
                 internalKey,
                 userId: data.userId,
-                iterations: 0,
-                tokens: 0,
+                iterations: stats?.iterations ?? 0,
+                tokens: (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0),
                 durationMs: Date.now() - startedAt,
-                taskClass: "standard",
+                taskClass,
                 evalScore: contractEval?.score,
               },
             )
@@ -843,6 +855,7 @@ export const agentLoop = inngest.createFunction(
         try {
           await step.run("emit-telemetry-failure", async () => {
             try {
+              const stats = runner.getLastRunStats()
               await convex.mutation(api.harness_telemetry.emit, {
                 internalKey,
                 messageId: data.messageId as Id<"messages">,
@@ -852,14 +865,19 @@ export const agentLoop = inngest.createFunction(
                 provider: "claude",
                 model: adapter.name,
                 attempt,
-                iterations: 0,
-                inputTokens: 0,
-                outputTokens: 0,
+                iterations: stats?.iterations ?? 0,
+                inputTokens: stats?.inputTokens ?? 0,
+                outputTokens: stats?.outputTokens ?? 0,
                 durationMs: Date.now() - startedAt,
                 streamAlerts: [],
                 steeringInjected: 0,
                 healingAttempts: 0,
                 hitlCheckpoints: 0,
+                taskClass,
+                taskClassifierMethod: classifierMethod,
+                verificationLevels: stats?.verificationLevels,
+                compactionStrategiesApplied: stats?.compactionStrategiesApplied,
+                compactionTokensSavedEstimate: stats?.compactionTokensSavedEstimate,
               })
             } catch (e) {
               console.warn("[agent-loop] failure-path telemetry failed:", e)
