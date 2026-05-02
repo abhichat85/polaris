@@ -4,20 +4,32 @@
  * Inngest cron that runs every 60 seconds to keep the warm pool at
  * the target size. Behaviour:
  *
- *   1. Rotate any unclaimed sandbox older than maxAgeMs out of the pool
+ *   1. Compute a dynamic target: `f(active users in last 5min)`. The
+ *      static env var POLARIS_WARM_POOL_TARGET acts as a CEILING and
+ *      a default; live load shrinks the target when traffic is low so
+ *      we don't burn E2B minutes for absent users.
+ *   2. Rotate any unclaimed sandbox older than maxAgeMs out of the pool
  *      (kill the actual sandbox, delete the row).
- *   2. Count remaining unclaimed sandboxes.
- *   3. Spin up `targetSize - currentSize` fresh sandboxes (capped per
- *      tick to avoid storm).
+ *   3. Count remaining unclaimed sandboxes.
+ *   4. Spin up `target - current` fresh sandboxes (capped per tick).
  *
- * The pool is gated by env vars so a developer running offline doesn't
- * burn E2B minutes:
- *   - POLARIS_WARM_POOL_TARGET    — target idle pool size (default 0)
+ * Sizing formula (when POLARIS_WARM_POOL_AUTOSCALE is enabled):
+ *   target = clamp(ceil(active_5min * RATIO) + BASELINE, 0, CEILING)
+ *
+ * Defaults: RATIO=0.3 (30% of active users get a warm sandbox),
+ * BASELINE=2 (always keep 2 warm so first-of-day users hit fast),
+ * CEILING=POLARIS_WARM_POOL_TARGET (the env var becomes the cap).
+ *
+ * Env vars:
+ *   - POLARIS_WARM_POOL_TARGET     — pool ceiling / fixed target (default 0)
+ *   - POLARIS_WARM_POOL_AUTOSCALE  — "true" to enable load-based sizing
+ *   - POLARIS_WARM_POOL_BASELINE   — minimum target when autoscaling (default 2)
+ *   - POLARIS_WARM_POOL_RATIO      — fraction of active users (default 0.3)
  *   - POLARIS_WARM_POOL_MAX_AGE_MS — rotate after this age (default 20m)
  *   - POLARIS_WARM_POOL_PER_TICK   — max spins per tick (default 2)
  *
- * Setting target=0 effectively disables the pool. Production should
- * scale target with active-user p95.
+ * Setting POLARIS_WARM_POOL_TARGET=0 disables the pool entirely
+ * (autoscale or not — the ceiling clamps to 0).
  */
 
 import { ConvexHttpClient } from "convex/browser"
@@ -39,8 +51,8 @@ export const warmPoolReplenisher = inngest.createFunction(
   // Every 60s — short cadence so the pool stays close to target.
   { cron: "* * * * *" },
   async ({ step }) => {
-    const targetSize = Number(process.env.POLARIS_WARM_POOL_TARGET ?? 0)
-    if (!Number.isFinite(targetSize) || targetSize <= 0) {
+    const ceiling = Number(process.env.POLARIS_WARM_POOL_TARGET ?? 0)
+    if (!Number.isFinite(ceiling) || ceiling <= 0) {
       return { skipped: "pool disabled (POLARIS_WARM_POOL_TARGET=0 or unset)" }
     }
 
@@ -64,6 +76,39 @@ export const warmPoolReplenisher = inngest.createFunction(
         Number(process.env.POLARIS_WARM_POOL_PER_TICK ?? DEFAULT_PER_TICK),
       ),
     )
+
+    // ── Dynamic target sizing ────────────────────────────────────────────
+    // When autoscale is on, compute the target from recent activity rather
+    // than always using the ceiling. This is the difference between
+    // "always have 5 warm" (cost: 5 sandboxes 24/7) and "have warm
+    // sandboxes proportional to who's actually using the product".
+    const autoscale = process.env.POLARIS_WARM_POOL_AUTOSCALE === "true"
+    const targetSize = await (async () => {
+      if (!autoscale) return ceiling
+      const baseline = Number(
+        process.env.POLARIS_WARM_POOL_BASELINE ?? 2,
+      )
+      const ratio = Number(process.env.POLARIS_WARM_POOL_RATIO ?? 0.3)
+      const fiveMinAgo = Date.now() - 5 * 60_000
+      const activeUsers = await step.run("count-active-users", async () => {
+        try {
+          const ids = await convex.query(
+            api.harness_telemetry.getActiveUsersSinceInternal,
+            { internalKey, sinceMs: fiveMinAgo },
+          )
+          return ids?.length ?? 0
+        } catch {
+          // On query failure, fall back to ceiling (safe over-provision).
+          return ceiling
+        }
+      })
+      const desired = Math.ceil(activeUsers * ratio) + baseline
+      return Math.max(0, Math.min(ceiling, desired))
+    })()
+
+    if (targetSize === 0) {
+      return { skipped: "autoscale target=0 (no recent activity)" }
+    }
 
     // ── 1. Rotate stale sandboxes out of the pool ────────────────────────
     const expired = await step.run("list-expired", async () =>
@@ -126,6 +171,8 @@ export const warmPoolReplenisher = inngest.createFunction(
 
     return {
       target: targetSize,
+      ceiling,
+      autoscale,
       currentBefore: currentSize,
       rotated,
       provisioned,
