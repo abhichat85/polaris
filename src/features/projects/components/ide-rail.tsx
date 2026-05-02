@@ -104,6 +104,12 @@ interface IdeRailProps {
   onToggleSpec: () => void;
   onToggleAgent: () => void;
   onOpenExport?: () => void;
+  /**
+   * When provided, the bottom Settings button routes to project-scoped
+   * settings (`/projects/<id>/settings`) instead of the workspace
+   * settings. Hooks + MCP server config live there.
+   */
+  projectId?: string;
 }
 
 export const IdeRail = ({
@@ -118,6 +124,7 @@ export const IdeRail = ({
   onToggleSpec,
   onToggleAgent,
   onOpenExport,
+  projectId,
 }: IdeRailProps) => {
   const router = useRouter();
   const CollapseIcon = collapsed ? PanelLeftOpenIcon : PanelLeftCloseIcon;
@@ -208,7 +215,11 @@ export const IdeRail = ({
         <NavItem
           icon={SettingsIcon}
           label="Settings"
-          onClick={() => router.push("/settings")}
+          onClick={() =>
+            router.push(
+              projectId ? `/projects/${projectId}/settings` : "/settings",
+            )
+          }
           collapsed={collapsed}
         />
 

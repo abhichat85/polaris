@@ -129,6 +129,7 @@ export const ProjectIdLayout = ({
         onToggleSpec={handleToggleSpec}
         onToggleAgent={() => setAgentOpen((v) => !v)}
         onOpenExport={() => setExportOpen(true)}
+        projectId={projectId}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
