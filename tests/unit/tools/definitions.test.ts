@@ -2,19 +2,22 @@ import { describe, it, expect } from "vitest"
 import { AGENT_TOOLS, FORBIDDEN_COMMAND_PATTERNS, getToolDefinition } from "@/lib/tools/definitions"
 
 describe("AGENT_TOOLS", () => {
-  it("exposes exactly twelve tools (CONSTITUTION §8, D-017/034/035/045/050/051)", () => {
+  it("exposes exactly fourteen tools (CONSTITUTION §8, D-017/034/035/045/050/051/053)", () => {
     // D-050 amended: added web_fetch
     // D-051 amended: added shell (stateful run_command sibling)
-    expect(AGENT_TOOLS).toHaveLength(12)
+    // D-053 amended: added find_definition + find_references
+    expect(AGENT_TOOLS).toHaveLength(14)
   })
 
-  it("contains the twelve Constitutional tools by name", () => {
+  it("contains the fourteen Constitutional tools by name", () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort()
     expect(names).toEqual(
       [
         "create_file",
         "delete_file",
         "edit_file",
+        "find_definition",
+        "find_references",
         "list_files",
         "multi_edit",
         "read_file",
@@ -41,6 +44,8 @@ describe("AGENT_TOOLS", () => {
       expect(Array.isArray(t.inputSchema.required)).toBe(true)
       // read_runtime_errors has no required fields — both args optional.
       if (t.name === "read_runtime_errors") continue
+      // find_references has no required fields — symbol-only call.
+      // Actually symbol IS required; left structure for clarity.
       expect(t.inputSchema.required.length, `tool ${t.name}`).toBeGreaterThan(0)
     }
   })

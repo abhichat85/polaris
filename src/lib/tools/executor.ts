@@ -30,6 +30,13 @@ import {
   type WebFetchDeps,
 } from "./web-fetch"
 import { ShellSessionRegistry } from "@/lib/agents/shell-session"
+import {
+  findDefinition,
+  findReferences,
+  formatCodeNavMatches,
+  type FindDefinitionArgs,
+  type FindReferencesArgs,
+} from "./code-nav"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -160,6 +167,16 @@ export class ToolExecutor {
         )
       case "web_fetch":
         return await this.webFetch(toolCall.input as unknown as WebFetchArgs)
+      case "find_definition":
+        return await this.findDefinitionTool(
+          toolCall.input as unknown as FindDefinitionArgs,
+          ctx,
+        )
+      case "find_references":
+        return await this.findReferencesTool(
+          toolCall.input as unknown as FindReferencesArgs,
+          ctx,
+        )
       default:
         return {
           ok: false,
@@ -503,6 +520,84 @@ export class ToolExecutor {
           formatted: result.formatted,
           count: result.count,
           consumed: result.consumed,
+        },
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+  }
+
+  private async findDefinitionTool(
+    input: FindDefinitionArgs,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolOutput> {
+    if (!input || typeof input.symbol !== "string" || input.symbol.length === 0) {
+      return {
+        ok: false,
+        error: "find_definition requires a non-empty 'symbol' string",
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+    if (!ctx.sandboxId) {
+      return {
+        ok: false,
+        error: "Sandbox not available — cannot search code.",
+        errorCode: "SANDBOX_DEAD",
+      }
+    }
+    try {
+      const result = await findDefinition(input, {
+        exec: (cmd, opts) => this.deps.sandbox.exec(ctx.sandboxId!, cmd, opts ?? {}),
+      })
+      return {
+        ok: true,
+        data: {
+          formatted: formatCodeNavMatches(result),
+          matches: result.matches,
+          truncated: result.truncated,
+        },
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+  }
+
+  private async findReferencesTool(
+    input: FindReferencesArgs,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolOutput> {
+    if (!input || typeof input.symbol !== "string" || input.symbol.length === 0) {
+      return {
+        ok: false,
+        error: "find_references requires a non-empty 'symbol' string",
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+    if (!ctx.sandboxId) {
+      return {
+        ok: false,
+        error: "Sandbox not available — cannot search code.",
+        errorCode: "SANDBOX_DEAD",
+      }
+    }
+    try {
+      const result = await findReferences(input, {
+        exec: (cmd, opts) => this.deps.sandbox.exec(ctx.sandboxId!, cmd, opts ?? {}),
+      })
+      return {
+        ok: true,
+        data: {
+          formatted: formatCodeNavMatches(result),
+          matches: result.matches,
+          truncated: result.truncated,
         },
       }
     } catch (err) {

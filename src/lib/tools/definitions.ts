@@ -184,6 +184,55 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "find_definition",
+    description:
+      "Locate where a symbol (function, class, interface, type, const, etc.) is defined. Faster + cheaper than reading whole files when you just want to know `where is X declared?`. Returns file paths, line numbers, snippets, and the inferred kind (function/class/interface/type/const/var/enum/namespace). Use this BEFORE `read_file` when navigating an unfamiliar codebase.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "Symbol name to locate (e.g. 'useAppStore', 'Button', 'AgentRunner').",
+        },
+        kind: {
+          type: "string",
+          description:
+            "Optional filter: function | class | interface | type | const | var | any (default: any).",
+        },
+        pathGlob: {
+          type: "string",
+          description: "Optional glob to scope: e.g. 'src/**/*.tsx'.",
+        },
+        maxResults: {
+          type: "integer",
+          description: "Cap on returned matches. Default 20, hard max 100.",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "find_references",
+    description:
+      "Find every place a symbol is referenced (called, imported, mentioned). Excludes the definition site by default — set `includeDefinitions: true` to include it. Use this BEFORE refactoring a function or removing a constant — surfaces the blast radius without reading whole files. Powered by ripgrep with word-boundary matching, so `foo` does NOT match `foobar`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string" },
+        pathGlob: { type: "string", description: "Optional glob to scope." },
+        maxResults: {
+          type: "integer",
+          description: "Default 80, hard max 500.",
+        },
+        includeDefinitions: {
+          type: "boolean",
+          description: "Include definition sites in the results. Default false.",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
     name: "web_fetch",
     description:
       "Fetch a URL and return its content as Markdown-ish text. Use this to read documentation, library READMEs, API specs, or blog posts before writing code that depends on them — it grounds your output in current API surfaces instead of training data. Set `prompt` to ask a focused question and receive a summary instead of the raw page (saves tokens). Hard caps: 30s timeout, 1 MB body, results cached 15min. Refuses private IPs and non-http(s) schemes. NOT for fetching files inside the sandbox — use read_file for that.",
