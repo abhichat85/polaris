@@ -49,6 +49,7 @@ import {
   shouldWireVerifyBuild,
 } from "@/lib/agents/verification-policy"
 import { classifyTask, classifyTaskWithLLM } from "@/lib/agents/task-classifier"
+import { inRollout } from "@/lib/agents/ab-router"
 import { resolveTaskModel, applyTierGate } from "@/lib/agents/task-models"
 import {
   CodeChangeContract,
@@ -440,14 +441,24 @@ export const agentLoop = inngest.createFunction(
           /* no plan / older convex schema — treat as planSize=0 */
         }
 
-        // D-052 — feature-flagged LLM classifier (Haiku, cached).
-        // POLARIS_TASK_CLASSIFIER=llm enables it; default stays heuristic
-        // until we've validated A/B numbers. Pro/Team only — free tier
-        // uses heuristic regardless to avoid the per-run Haiku cost.
+        // D-052 — LLM classifier rollout (Haiku, cached).
+        // Routing modes (resolved in priority order):
+        //   - POLARIS_TASK_CLASSIFIER=llm  → 100% LLM (force on)
+        //   - POLARIS_TASK_CLASSIFIER=ab   → A/B rollout via inRollout(),
+        //     percentage from POLARIS_TASK_CLASSIFIER_PCT (default 25)
+        //   - else                          → heuristic only
+        // Free tier always uses heuristic (no per-run Haiku cost).
+        const classifierMode = process.env.POLARIS_TASK_CLASSIFIER
+        const rolloutPct = Number(
+          process.env.POLARIS_TASK_CLASSIFIER_PCT ?? 25,
+        )
+        const llmEligible =
+          plan !== "free" && !!process.env.ANTHROPIC_API_KEY
         const useLLMClassifier =
-          process.env.POLARIS_TASK_CLASSIFIER === "llm" &&
-          plan !== "free" &&
-          !!process.env.ANTHROPIC_API_KEY
+          llmEligible &&
+          (classifierMode === "llm" ||
+            (classifierMode === "ab" &&
+              inRollout(data.userId, "task_classifier_llm", rolloutPct)))
         const classifierInput = {
           userPrompt,
           planSize,
