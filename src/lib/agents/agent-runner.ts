@@ -276,12 +276,53 @@ interface RunState {
    * completion claim. Useful for measuring how often we're skipping.
    */
   verificationLevels: VerificationLevel[]
+  /**
+   * D-054 — telemetry: which compaction strategies fired during the
+   * run (in order). Empty when no compaction triggered.
+   */
+  compactionStrategiesApplied: string[]
+  /**
+   * D-054 — estimated tokens saved by NOT firing auto-compact when
+   * a cheap stage was sufficient. 0 when auto-compact ran or no
+   * compaction triggered.
+   */
+  compactionTokensSavedEstimate: number
+}
+
+/**
+ * Run-time statistics collected during a single agent run.
+ * Exposed via `AgentRunner.getLastRunStats()` so agent-loop can fold
+ * them into telemetry without changing the public `run()` signature.
+ */
+export interface RunStats {
+  iterations: number
+  inputTokens: number
+  outputTokens: number
+  /** Verification levels applied per completion claim. */
+  verificationLevels: VerificationLevel[]
+  /** Compaction strategies that fired during the run (in order). */
+  compactionStrategiesApplied: string[]
+  /** Estimated tokens saved by NOT firing auto-compact when avoidable. */
+  compactionTokensSavedEstimate: number
 }
 
 export class AgentRunner {
+  /**
+   * Stats from the most-recent `run()` call. agent-loop reads this in
+   * the post-loop telemetry block. Reset to undefined on each `run()`
+   * entry so a stale run's stats can never leak forward.
+   */
+  private lastRunStats: RunStats | undefined
+
   constructor(private readonly deps: AgentRunnerDeps) {}
 
+  /** Returns stats from the most recent run, or undefined if none. */
+  getLastRunStats(): RunStats | undefined {
+    return this.lastRunStats
+  }
+
   async run(input: AgentRunInput): Promise<void> {
+    this.lastRunStats = undefined
     const startedAt = (this.deps.now ?? Date.now)()
     const state = await this.initState(input)
     // D-025 — resolve budget; legacy callers get FREE.
@@ -321,6 +362,21 @@ export class AgentRunner {
           },
         )
         if (pipelineResult.applied.length > 0) {
+          // D-054 telemetry: record what fired so we can A/B-style
+          // measure how often the cheap stages alone are sufficient.
+          for (const name of pipelineResult.applied) {
+            state.compactionStrategiesApplied.push(name)
+          }
+          // If auto-compact didn't fire, estimate savings vs. what
+          // it would have cost. auto-compact compresses to ~1500 tokens;
+          // anything we kept beyond that is "saved" by the cheap stages.
+          if (!pipelineResult.applied.includes("auto-compact")) {
+            const POST_AUTO_COMPACT_BASELINE = 1_500
+            const saved = Math.max(0, pipelineResult.tokens - POST_AUTO_COMPACT_BASELINE)
+            // Subtract because cheap stages still cost some Haiku tokens.
+            // Conservative: assume ~500 tokens spent.
+            state.compactionTokensSavedEstimate += Math.max(0, saved - 500)
+          }
           state.messages = pipelineResult.messages
           state.compacted = true
           // UI banner — show which strategies fired (helps users + ops
@@ -486,6 +542,8 @@ export class AgentRunner {
           totalChangedPaths: new Set<string>(),
           buildFixCount: 0,
           verificationLevels: [],
+      compactionStrategiesApplied: [],
+      compactionTokensSavedEstimate: 0,
         }
       }
     }
@@ -500,6 +558,8 @@ export class AgentRunner {
       totalChangedPaths: new Set<string>(),
       buildFixCount: 0,
       verificationLevels: [],
+      compactionStrategiesApplied: [],
+      compactionTokensSavedEstimate: 0,
     }
   }
 
@@ -723,6 +783,18 @@ export class AgentRunner {
     status: AgentDoneStatus,
     errorMessage?: string,
   ): Promise<void> {
+    // Snapshot run stats BEFORE markDone so agent-loop can read them
+    // in its post-loop telemetry block. Note: markDone may be called
+    // from multiple paths (success, error, hard limit) — this captures
+    // the final state in all of them.
+    this.lastRunStats = {
+      iterations: state.iterationCount,
+      inputTokens: state.totalInputTokens,
+      outputTokens: state.totalOutputTokens,
+      verificationLevels: [...state.verificationLevels],
+      compactionStrategiesApplied: [...state.compactionStrategiesApplied],
+      compactionTokensSavedEstimate: state.compactionTokensSavedEstimate,
+    }
     await this.deps.sink.markDone(input.messageId, {
       status,
       errorMessage,
