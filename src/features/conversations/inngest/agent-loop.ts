@@ -201,7 +201,12 @@ export const agentLoop = inngest.createFunction(
         return handle.id
       })()
 
-      const finalSandboxId = sandboxId ?? await sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS }).then((h) => h.id)
+      // sandboxId is null only on the free-tier short-circuit branch
+      // above. In that case we must still cold-provision a fresh sandbox
+      // before persisting the row + returning it.
+      const finalSandboxId: string =
+        sandboxId ??
+        (await sandbox.create("nextjs", { timeoutMs: SANDBOX_TTL_MS })).id
 
       await convex.mutation(api.sandboxes.setForProject, {
         internalKey,

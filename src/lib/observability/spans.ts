@@ -19,6 +19,7 @@ export type SpanOp =
   | "agent.iteration"
   | "prompt.to.preview"
   | "sandbox.boot"
+  | "sandbox.claim_warm"
   | "tool.run_command"
   | "convex.query"
   | "convex.mutation"

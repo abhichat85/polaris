@@ -28,8 +28,9 @@ import {
   inferVerificationLevel,
   type VerificationLevel,
 } from "./verification-policy"
-import type { TaskClass } from "./task-classifier"
-import { runCompactionPipeline, totalTokens as estimateContextTokens } from "./context-pipeline"
+// Note: TaskClass is also defined locally in this module (line 98+);
+// using the local definition to avoid duplicate-symbol conflict.
+import { runCompactionPipeline } from "./context-pipeline"
 import type {
   AgentCheckpoint,
   AgentDoneStatus,
