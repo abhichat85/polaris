@@ -184,6 +184,57 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "read_plan",
+    description:
+      "Read the project's structured plan (feature list with statuses, acceptance criteria, dependencies). Use this when starting work to know what's pending vs done. Set `pendingOnly: true` to skip completed features and focus on what's left.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pendingOnly: {
+          type: "boolean",
+          description: "When true, omit completed features. Default false.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "update_feature_status",
+    description:
+      "Mark a feature in the plan as in_progress, done, or blocked. Use this AS YOU WORK so the planner subagent (and the user) sees real-time progress. status='blocked' requires a non-empty `blocker` reason. featureId must match an existing plan feature exactly.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        featureId: { type: "string" },
+        status: {
+          type: "string",
+          description: "pending | in_progress | done | blocked",
+        },
+        blocker: {
+          type: "string",
+          description: "Required when status='blocked'. Brief reason (≤ 1 sentence).",
+        },
+      },
+      required: ["featureId", "status"],
+    },
+  },
+  {
+    name: "request_planner_input",
+    description:
+      "Pause and ask the planner subagent a clarifying question (e.g. 'should this be a modal or a new page?'). Blocks for up to 60s waiting for an answer. Bounded: max 3 clarifications per agent run — use sparingly. If the planner is unavailable or times out, proceed with best judgment and add a feature blocker note.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: { type: "string" },
+        timeoutMs: {
+          type: "integer",
+          description: "Optional timeout in ms (default 60000, hard max 300000).",
+        },
+      },
+      required: ["question"],
+    },
+  },
+  {
     name: "find_definition",
     description:
       "Locate where a symbol (function, class, interface, type, const, etc.) is defined. Faster + cheaper than reading whole files when you just want to know `where is X declared?`. Returns file paths, line numbers, snippets, and the inferred kind (function/class/interface/type/const/var/enum/namespace). Use this BEFORE `read_file` when navigating an unfamiliar codebase.",

@@ -2,14 +2,15 @@ import { describe, it, expect } from "vitest"
 import { AGENT_TOOLS, FORBIDDEN_COMMAND_PATTERNS, getToolDefinition } from "@/lib/tools/definitions"
 
 describe("AGENT_TOOLS", () => {
-  it("exposes exactly fourteen tools (CONSTITUTION §8, D-017/034/035/045/050/051/053)", () => {
-    // D-050 amended: added web_fetch
-    // D-051 amended: added shell (stateful run_command sibling)
-    // D-053 amended: added find_definition + find_references
-    expect(AGENT_TOOLS).toHaveLength(14)
+  it("exposes exactly seventeen tools (CONSTITUTION §8, all amendments)", () => {
+    // D-050: web_fetch
+    // D-051: shell
+    // D-053: find_definition + find_references
+    // Phase 3.3: read_plan + update_feature_status + request_planner_input
+    expect(AGENT_TOOLS).toHaveLength(17)
   })
 
-  it("contains the fourteen Constitutional tools by name", () => {
+  it("contains the seventeen Constitutional tools by name", () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort()
     expect(names).toEqual(
       [
@@ -21,10 +22,13 @@ describe("AGENT_TOOLS", () => {
         "list_files",
         "multi_edit",
         "read_file",
+        "read_plan",
         "read_runtime_errors",
+        "request_planner_input",
         "run_command",
         "search_code",
         "shell",
+        "update_feature_status",
         "web_fetch",
         "write_file",
       ].sort(),
@@ -42,10 +46,9 @@ describe("AGENT_TOOLS", () => {
     for (const t of AGENT_TOOLS) {
       expect(t.inputSchema.type).toBe("object")
       expect(Array.isArray(t.inputSchema.required)).toBe(true)
-      // read_runtime_errors has no required fields — both args optional.
-      if (t.name === "read_runtime_errors") continue
-      // find_references has no required fields — symbol-only call.
-      // Actually symbol IS required; left structure for clarity.
+      // read_runtime_errors and read_plan have no required fields —
+      // all args optional (pendingOnly etc.).
+      if (t.name === "read_runtime_errors" || t.name === "read_plan") continue
       expect(t.inputSchema.required.length, `tool ${t.name}`).toBeGreaterThan(0)
     }
   })

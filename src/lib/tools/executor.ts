@@ -41,6 +41,16 @@ import type { HookRunner } from "@/lib/agents/hooks/hook-runner"
 import type { HookContext } from "@/lib/agents/hooks/types"
 import type { MCPRegistry } from "@/lib/agents/mcp/registry"
 import { isMCPName } from "@/lib/agents/mcp/types"
+import {
+  ClarificationBudget,
+  executeReadPlan,
+  executeRequestPlannerInput,
+  executeUpdateFeatureStatus,
+  type PlanToolsDeps,
+  type ReadPlanArgs,
+  type RequestPlannerInputArgs,
+  type UpdateFeatureStatusArgs,
+} from "./plan-tools"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -89,6 +99,13 @@ export interface ToolExecutorDeps {
    * matching MCP client instead of the local dispatch table.
    */
   mcp?: MCPRegistry
+  /**
+   * Phase 3.3 — Optional plan tools deps. When provided, the
+   * read_plan / update_feature_status / request_planner_input tools
+   * route to Convex (api.agent_plans.*); when absent, they return
+   * a friendly "not configured" message.
+   */
+  planTools?: PlanToolsDeps
 }
 
 const COMMAND_TIMEOUT_MS = 60_000
@@ -105,9 +122,12 @@ const MUTATING_TOOLS = new Set([
 export class ToolExecutor {
   /** D-051 — One ShellSession per sandbox; lazy-initialized by `shell` tool. */
   private readonly shellRegistry: ShellSessionRegistry
+  /** Phase 3.3 — Per-run clarification budget (caps planner round-trips). */
+  private readonly clarificationBudget: ClarificationBudget
 
   constructor(private readonly deps: ToolExecutorDeps) {
     this.shellRegistry = new ShellSessionRegistry(deps.sandbox)
+    this.clarificationBudget = new ClarificationBudget()
   }
 
   /**
@@ -249,6 +269,16 @@ export class ToolExecutor {
         return await this.findReferencesTool(
           toolCall.input as unknown as FindReferencesArgs,
           ctx,
+        )
+      case "read_plan":
+        return await this.readPlan(toolCall.input as unknown as ReadPlanArgs)
+      case "update_feature_status":
+        return await this.updateFeatureStatus(
+          toolCall.input as unknown as UpdateFeatureStatusArgs,
+        )
+      case "request_planner_input":
+        return await this.requestPlannerInput(
+          toolCall.input as unknown as RequestPlannerInputArgs,
         )
       default:
         return {
@@ -680,6 +710,50 @@ export class ToolExecutor {
         errorCode: "INTERNAL_ERROR",
       }
     }
+  }
+
+  private async readPlan(input: ReadPlanArgs): Promise<ToolOutput> {
+    if (!this.deps.planTools) {
+      return {
+        ok: true,
+        data: {
+          formatted:
+            "Plans are not configured for this project (no planner subagent has run yet).",
+          plan: null,
+        },
+      }
+    }
+    return await executeReadPlan(input ?? {}, this.deps.planTools)
+  }
+
+  private async updateFeatureStatus(
+    input: UpdateFeatureStatusArgs,
+  ): Promise<ToolOutput> {
+    if (!this.deps.planTools) {
+      return {
+        ok: false,
+        error: "Plan storage not configured — no plan exists for this project.",
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+    return await executeUpdateFeatureStatus(input, this.deps.planTools)
+  }
+
+  private async requestPlannerInput(
+    input: RequestPlannerInputArgs,
+  ): Promise<ToolOutput> {
+    if (!this.deps.planTools) {
+      return {
+        ok: false,
+        error: "Planner subagent not configured for this project.",
+        errorCode: "INTERNAL_ERROR",
+      }
+    }
+    return await executeRequestPlannerInput(
+      input,
+      this.deps.planTools,
+      this.clarificationBudget,
+    )
   }
 
   private async webFetch(input: WebFetchArgs): Promise<ToolOutput> {
