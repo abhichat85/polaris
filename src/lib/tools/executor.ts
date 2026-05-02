@@ -37,6 +37,8 @@ import {
   type FindDefinitionArgs,
   type FindReferencesArgs,
 } from "./code-nav"
+import type { HookRunner } from "@/lib/agents/hooks/hook-runner"
+import type { HookContext } from "@/lib/agents/hooks/types"
 import type { FileService } from "@/lib/files/types"
 import type { SandboxProvider } from "@/lib/sandbox/types"
 import type { ToolErrorCode, ToolExecutionContext, ToolOutput } from "./types"
@@ -66,6 +68,19 @@ export interface ToolExecutorDeps {
    * returning the raw fetched content.
    */
   webFetch?: WebFetchDeps
+  /**
+   * D-055 — Optional hook runner for pre/post tool-call interception.
+   * When provided, every tool call is wrapped with pre + post hook
+   * invocations. Hooks can deny, modify input, or transform output.
+   * When absent, no hooks fire (zero-config baseline).
+   */
+  hooks?: HookRunner
+  /**
+   * D-055 — Optional supplier of HookContext for the active run.
+   * Required if `hooks` is provided. Returns the context bundle every
+   * hook invocation receives.
+   */
+  hookContext?: () => HookContext
 }
 
 const COMMAND_TIMEOUT_MS = 60_000
@@ -98,24 +113,65 @@ export class ToolExecutor {
 
   async execute(toolCall: ToolCall, ctx: ToolExecutionContext): Promise<ToolOutput> {
     try {
+      // D-055 — pre_tool_call hooks. Hooks can deny the call or modify
+      // input. Runs BEFORE the permission gate so deny reasons can
+      // include policy text the gate doesn't know about.
+      let effectiveToolCall = toolCall
+      if (this.deps.hooks && this.deps.hookContext) {
+        const hookCtx = this.deps.hookContext()
+        const pre = await this.deps.hooks.runEvent("pre_tool_call", {
+          event: "pre_tool_call",
+          ctx: hookCtx,
+          toolCall,
+        })
+        if (pre.decision.decision === "deny") {
+          return {
+            ok: false,
+            error: `Denied by hook: ${pre.decision.reason}`,
+            errorCode: "PATH_LOCKED",
+          }
+        }
+        if (pre.decision.decision === "modify") {
+          effectiveToolCall = {
+            ...toolCall,
+            input: { ...toolCall.input, ...pre.decision.inputPatch },
+          }
+        }
+      }
+
       // Layer 0: permission gate for mutating ops.
-      if (MUTATING_TOOLS.has(toolCall.name)) {
-        const path = (toolCall.input as { path?: unknown }).path
+      if (MUTATING_TOOLS.has(effectiveToolCall.name)) {
+        const path = (effectiveToolCall.input as { path?: unknown }).path
         if (typeof path !== "string" || !FilePermissionPolicy.canWrite(path)) {
           return locked(typeof path === "string" ? path : "<missing>")
         }
       }
 
-      const result = await this.dispatch(toolCall, ctx)
+      let result = await this.dispatch(effectiveToolCall, ctx)
+
+      // D-055 — post_tool_call hooks. Hooks can transform the output.
+      if (this.deps.hooks && this.deps.hookContext) {
+        const hookCtx = this.deps.hookContext()
+        const post = await this.deps.hooks.runEvent("post_tool_call", {
+          event: "post_tool_call",
+          ctx: hookCtx,
+          toolCall: effectiveToolCall,
+          output: result,
+        })
+        if (post.decision.decision === "transform_output") {
+          result = post.decision.outputPatch
+        }
+        // deny + modify decisions are no-ops on post-events.
+      }
 
       // D-044 — record successful mutating edits for live context. Best-effort
       // (any failure is swallowed; missing live context must not fail the run).
       if (
         result.ok &&
-        MUTATING_TOOLS.has(toolCall.name) &&
+        MUTATING_TOOLS.has(effectiveToolCall.name) &&
         this.deps.recordEdit
       ) {
-        const path = (toolCall.input as { path?: unknown }).path
+        const path = (effectiveToolCall.input as { path?: unknown }).path
         if (typeof path === "string" && path.length > 0) {
           this.deps.recordEdit(path).catch(() => {
             /* swallow */
