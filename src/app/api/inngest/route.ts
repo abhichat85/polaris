@@ -14,6 +14,8 @@ import {
   preferenceMiningScheduler,
 } from "@/features/conversations/inngest/preference-mining";
 import { promptEnrichmentScorer } from "@/features/conversations/inngest/prompt-enrichment-scorer";
+import { warmPoolReplenisher } from "@/features/conversations/inngest/warm-pool-replenisher";
+import { planClarificationDispatcher } from "@/features/conversations/inngest/plan-clarification";
 import { exportToGitHub } from "@/features/projects/inngest/github-export";
 import { deployPipeline } from "@/features/deploy/inngest/deploy-pipeline";
 import { importRepo as githubImportRepo } from "@/features/github/inngest/import-repo";
@@ -31,6 +33,8 @@ export const { GET, POST, PUT } = serve({
     preferenceMineUser,         // Phase 5 — per-user preference mining worker
     preferenceMiningScheduler,  // Phase 5 — daily 03:00 UTC mining scheduler
     promptEnrichmentScorer,     // Phase 6 — prompt enrichment scorer
+    warmPoolReplenisher,        // Phase 3.1 — warm sandbox pool replenisher (60s cron)
+    planClarificationDispatcher, // Phase 3.3 — planner subagent clarification handler
     exportToGitHub,    // legacy export
     deployPipeline,    // sub-plan 07
     githubImportRepo,  // sub-plan 06 §11
