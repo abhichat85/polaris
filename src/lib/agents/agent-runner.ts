@@ -18,7 +18,7 @@
  *   4. Hard limits           — 50 iterations / 150K tokens / 5 min wall clock
  */
 
-import { AGENT_TOOLS } from "@/lib/tools/definitions"
+import { AGENT_TOOLS, type ToolDefinition } from "@/lib/tools/definitions"
 import { ToolExecutor } from "@/lib/tools/executor"
 import type { ToolOutput } from "@/lib/tools/types"
 import { AGENT_SYSTEM_PROMPT } from "./system-prompt"
@@ -223,6 +223,14 @@ export interface AgentRunnerDeps {
    * Returning empty/undefined → no injection.
    */
   loadLiveContext?: () => Promise<string | undefined>
+  /**
+   * D-056 — Optional extra tool definitions to expose to the model on
+   * top of AGENT_TOOLS. Used by agent-loop to surface MCP-routed tools
+   * (named `mcp__<server>__<tool>`) so the model knows they exist.
+   * The actual dispatch routing lives in ToolExecutor; the runner only
+   * passes the merged catalog to the adapter.
+   */
+  extraTools?: ToolDefinition[]
   /** Test seam — defaults to Date.now(). */
   now?: () => number
 }
@@ -509,7 +517,10 @@ export class AgentRunner {
     let errored = false
     let errorMessage: string | undefined
 
-    const stream = this.deps.adapter.runWithTools(state.messages, AGENT_TOOLS, {
+    const tools = this.deps.extraTools && this.deps.extraTools.length > 0
+      ? [...AGENT_TOOLS, ...this.deps.extraTools]
+      : AGENT_TOOLS
+    const stream = this.deps.adapter.runWithTools(state.messages, tools, {
       // D-030 — agent-loop may augment the prompt with /AGENTS.md.
       systemPrompt: this.deps.systemPrompt ?? AGENT_SYSTEM_PROMPT,
       maxTokens: DEFAULT_MAX_OUTPUT_TOKENS,

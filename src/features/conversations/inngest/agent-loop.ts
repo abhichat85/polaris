@@ -37,6 +37,10 @@ import {
 } from "@/lib/sandbox"
 import { ToolExecutor } from "@/lib/tools/executor"
 import { makeSummarizer as makeWebFetchSummarizer } from "@/lib/agents/haiku-summarizer"
+import { HookRunner } from "@/lib/agents/hooks/hook-runner"
+import { MCPRegistry } from "@/lib/agents/mcp/registry"
+import { StdioMCPClient } from "@/lib/agents/mcp/stdio-client"
+import type { MCPClient } from "@/lib/agents/mcp/types"
 import { withSpan } from "@/lib/observability/spans"
 import { verify, verifyBuild } from "@/lib/agents/verifier"
 import {
@@ -183,6 +187,75 @@ export const agentLoop = inngest.createFunction(
 
     const sink = new ConvexAgentSink({ convex, internalKey })
     const files = new ConvexFileService({ convex })
+
+    // D-055 — assemble per-project HTTP hooks into a HookRunner.
+    // Best-effort: a Convex error here must not block the run. When the
+    // project has no hooks configured, hookRunner is left undefined and
+    // the executor takes its zero-overhead fast path.
+    const hookRunner = await (async () => {
+      try {
+        const rows = await convex.query(
+          api.hooks.listEnabledForProjectInternal,
+          { internalKey, projectId },
+        )
+        if (!rows || rows.length === 0) return undefined
+        const configs = rows.map((r) => ({
+          id: r.hookId,
+          event: r.event as
+            | "pre_tool_call"
+            | "post_tool_call"
+            | "iteration_start"
+            | "agent_done",
+          target: { type: "http" as const, url: r.target.url, headers: r.target.headers },
+          failMode: r.failMode,
+          timeoutMs: r.timeoutMs,
+        }))
+        return new HookRunner(configs)
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[agent-loop] failed to load hooks; proceeding without:", err)
+        return undefined
+      }
+    })()
+
+    // D-056 — assemble per-project MCP servers into an MCPRegistry. Same
+    // best-effort posture: any failure → run without MCP.
+    const mcpRegistry = await (async () => {
+      try {
+        const rows = await convex.query(
+          api.mcp_servers.listEnabledForProjectInternal,
+          { internalKey, projectId },
+        )
+        if (!rows || rows.length === 0) return undefined
+        const clients: MCPClient[] = []
+        for (const row of rows) {
+          if (row.transport.type === "stdio") {
+            clients.push(
+              new StdioMCPClient({
+                name: row.name,
+                transport: {
+                  type: "stdio",
+                  command: row.transport.command,
+                  args: row.transport.args,
+                  env: row.transport.env,
+                },
+                timeoutMs: row.timeoutMs,
+                toolAllowlist: row.toolAllowlist,
+              }),
+            )
+          }
+          // HTTP/SSE transports require server-side wiring not present
+          // in this iteration; stdio is the well-supported path.
+        }
+        if (clients.length === 0) return undefined
+        return new MCPRegistry(clients)
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[agent-loop] failed to load MCP servers; proceeding without:", err)
+        return undefined
+      }
+    })()
+
     const executor = new ToolExecutor({
       files,
       sandbox,
@@ -229,6 +302,19 @@ export const agentLoop = inngest.createFunction(
             summarize: makeWebFetchSummarizer(),
           }
         : undefined,
+      // D-055 — pre/post tool-call HTTP hooks (per-project, optional).
+      hooks: hookRunner,
+      hookContext: hookRunner
+        ? () => ({
+            projectId: data.projectId,
+            userId: data.userId,
+            messageId: data.messageId,
+            conversationId: data.conversationId,
+            iteration: 0, // updated per-iteration would require more plumbing
+          })
+        : undefined,
+      // D-056 — MCP-routed tools (per-project, optional).
+      mcp: mcpRegistry,
     })
 
     // D-039/40/41 — classify the run, pick a model, size the budget. We
@@ -477,6 +563,11 @@ export const agentLoop = inngest.createFunction(
         }
       }
 
+      // D-056 — surface MCP-routed tools to the model so it knows they
+      // exist. ToolExecutor routes the calls; this just adds the
+      // entries to the catalog the adapter sends.
+      const mcpExtraTools = mcpRegistry ? await mcpRegistry.allTools() : []
+
       const runner = new AgentRunner({
         adapter,
         executor,
@@ -488,6 +579,7 @@ export const agentLoop = inngest.createFunction(
         verifyBuild: verifyBuildDep, // D-037
         loadRuntimeErrors: loadRuntimeErrorsDep, // D-046
         loadLiveContext: loadLiveContextDep, // D-047
+        extraTools: mcpExtraTools, // D-056 — MCP-routed tools
       })
       try {
         await runner.run({
