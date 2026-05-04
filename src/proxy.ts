@@ -24,6 +24,9 @@ import { resolveRouting } from "@/lib/middleware/routing"
 const COI_PATHS = /^\/projects(\/|$)/
 
 function getHostname(req: NextRequest): string {
+  // x-forwarded-host is set by Vercel's edge network and is trusted in
+  // production. Fall back to the standard host header, then parse from
+  // the request URL directly.
   return (
     req.headers.get("x-forwarded-host") ??
     req.headers.get("host") ??
@@ -43,10 +46,14 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
   }
 
   if (decision.action === "protect") {
+    // auth.protect() throws a Clerk control-flow error when the user is
+    // unauthenticated; clerkMiddleware catches it and returns the sign-in
+    // redirect. Execution only reaches NextResponse.next() below when the
+    // user is authenticated (or the route is a passthrough).
     await auth.protect()
   }
 
-  // 2. Build response with trace-ID and optional COI headers
+  // 3 & 4. Trace-ID injection + COI headers
   const traceId = req.headers.get(TRACE_HEADER) ?? newTraceId()
   const res = NextResponse.next()
   res.headers.set(TRACE_HEADER, traceId)
