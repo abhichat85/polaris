@@ -1,8 +1,12 @@
 /**
  * Next.js 16 edge proxy (the v16 rename of "middleware").
- * Clerk wraps the request; trace-ID is injected inside the handler;
- * Cross-Origin Isolation headers are applied to /projects/* so
- * WebContainer's SharedArrayBuffer works (self.crossOriginIsolated).
+ *
+ * Responsibilities (in order):
+ *   1. Subdomain routing — getpolaris.xyz → marketing only; everything
+ *      else → app.getpolaris.xyz. See src/lib/middleware/routing.ts.
+ *   2. Clerk authentication guard for protected routes.
+ *   3. Trace-ID injection on every response.
+ *   4. Cross-Origin Isolation headers on /projects/* for WebContainer.
  *
  * Why COI headers here and not only in next.config.ts:
  *   The next.config.ts headers run AFTER withSentryConfig wraps the
@@ -15,18 +19,39 @@
 import { clerkMiddleware } from "@clerk/nextjs/server"
 import { NextResponse, type NextRequest } from "next/server"
 import { newTraceId, TRACE_HEADER } from "@/lib/observability/trace-id"
+import { resolveRouting } from "@/lib/middleware/routing"
 
 const COI_PATHS = /^\/projects(\/|$)/
 
-export default clerkMiddleware((auth, req: NextRequest) => {
+function getHostname(req: NextRequest): string {
+  return (
+    req.headers.get("x-forwarded-host") ??
+    req.headers.get("host") ??
+    new URL(req.url).hostname
+  )
+}
+
+export default clerkMiddleware(async (auth, req: NextRequest) => {
+  const hostname = getHostname(req)
+  const { pathname, search } = req.nextUrl
+
+  // 1. Subdomain routing
+  const decision = resolveRouting(hostname, pathname, search)
+
+  if (decision.action === "redirect") {
+    return NextResponse.redirect(decision.destination, { status: 308 })
+  }
+
+  if (decision.action === "protect") {
+    await auth.protect()
+  }
+
+  // 2. Build response with trace-ID and optional COI headers
   const traceId = req.headers.get(TRACE_HEADER) ?? newTraceId()
   const res = NextResponse.next()
   res.headers.set(TRACE_HEADER, traceId)
 
-  // WebContainer requires Cross-Origin Isolation on the page that boots
-  // it (uses SharedArrayBuffer). Scope to /projects/* — marketing/auth
-  // pages that embed Clerk's iframes must NOT be COI or those break.
-  if (COI_PATHS.test(req.nextUrl.pathname)) {
+  if (COI_PATHS.test(pathname)) {
     res.headers.set("Cross-Origin-Opener-Policy", "same-origin")
     res.headers.set("Cross-Origin-Embedder-Policy", "credentialless")
   }
