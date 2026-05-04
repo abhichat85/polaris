@@ -1,7 +1,8 @@
 import type { MetadataRoute } from "next"
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://build.praxiomai.xyz"
+  const base =
+    process.env.NEXT_PUBLIC_MARKETING_URL ?? "https://getpolaris.xyz"
   const lastModified = new Date()
   return [
     { url: `${base}/`, lastModified, priority: 1.0, changeFrequency: "weekly" },

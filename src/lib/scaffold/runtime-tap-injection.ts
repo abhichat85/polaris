@@ -22,7 +22,7 @@ export interface RuntimeTapConfig {
 }
 
 const DEFAULT_SCRIPT_ORIGIN =
-  process.env.NEXT_PUBLIC_POLARIS_ORIGIN ?? "https://build.praxiomai.xyz"
+  process.env.NEXT_PUBLIC_POLARIS_ORIGIN ?? "https://app.getpolaris.xyz"
 
 const DEFAULT_INGEST_URL = `${DEFAULT_SCRIPT_ORIGIN}/api/runtime-error`
 

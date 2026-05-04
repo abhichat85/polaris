@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     description:
       "The AI IDE that builds from spec, not instinct. Spec-driven. Cloud-native. Yours to keep.",
     type: "website",
-    url: "https://build.praxiomai.xyz",
+    url: "https://getpolaris.xyz",
   },
 }
 

@@ -97,7 +97,7 @@ export function Footer() {
         <div className="mt-16 flex flex-col items-start justify-between gap-4 border-t border-foreground/[0.04] pt-6 text-[12px] text-muted-foreground/50 md:flex-row md:items-center">
           <span>© {new Date().getFullYear()} Praxiom. Polaris is a trademark of Praxiom.</span>
           <span className="font-mono text-muted-foreground/40">
-            build.praxiomai.xyz
+            app.getpolaris.xyz
           </span>
         </div>
       </div>

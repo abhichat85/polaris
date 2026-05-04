@@ -268,7 +268,7 @@ const PAGE_PLACEHOLDER = `export default function Home() {
 
 const README = `# Polaris App
 
-This project was scaffolded with [Polaris](https://build.praxiomai.xyz).
+This project was scaffolded with [Polaris](https://getpolaris.xyz).
 
 ## Getting Started
 

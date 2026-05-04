@@ -8,7 +8,7 @@
  *   3. Else, enroll on the waitlist and (optionally) revoke the user.
  *
  * Configure in Clerk Dashboard → Webhooks → Add endpoint:
- *   URL:    https://build.praxiomai.xyz/api/webhooks/clerk
+ *   URL:    https://app.getpolaris.xyz/api/webhooks/clerk
  *   Events: user.created  (extend later as needed)
  *   Secret: copy to CLERK_WEBHOOK_SECRET
  */
